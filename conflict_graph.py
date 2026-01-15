@@ -267,6 +267,8 @@ if uploaded_conflict_file:
     stats_df = stats_df[["Conflict Type Display", "Variable", "Count", "Mean", "Min", "Max"]]
     st.dataframe(stats_df)
 
+
+
     # -----------------------------
     # HEATMAPS
     # -----------------------------
@@ -344,9 +346,29 @@ if uploaded_volume_file:
         with cols_vol[0]:
             daily_volume = df_vol.groupby("Day_only")["Total Volume"].sum().reset_index()
             daily_volume["Trend"] = daily_volume["Total Volume"].rolling(window=3, min_periods=1).mean()
-            fig_daily = px.bar(daily_volume, x="Day_only", y="Total Volume", width=900, height=500)
-            fig_daily.add_scatter(x=daily_volume["Day_only"], y=daily_volume["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
+            # Format Day labels: "dd-MMM (Day)"
+            daily_volume["Day_Label"] = pd.to_datetime(daily_volume["Day_only"]).dt.strftime("%d-%b (%a)")
+
+            fig_daily = px.bar(
+                daily_volume,
+                x="Day_Label",
+                y="Total Volume",
+                width=900,
+                height=500
+            )
+            fig_daily.add_scatter(
+                x=daily_volume["Day_Label"],
+                y=daily_volume["Trend"],
+                mode="lines",
+                name="Trend",
+                line=dict(color="orange", width=3)
+            )
+            fig_daily.update_layout(
+                xaxis_tickangle=-45
+            )
+
             st.plotly_chart(fig_daily, use_container_width=False)
+
 
         with cols_vol[1]:
             hourly_volume["Trend"] = hourly_volume["Total Volume"].rolling(window=2, min_periods=1).mean()
