@@ -42,7 +42,7 @@ if uploaded_conflict_file:
     # Map encounter types
     if "Encounter_type" in df.columns:
         df["Encounter_grouped"] = df["Encounter_type"].apply(
-            lambda enc: "Merging" if enc in ["Adjacent-Approaches", "Opposing-through"] else enc
+            lambda enc: "Merging" if enc in ["Adjacent-Approaches", "Opposing-through", "Opposing-Approaches"] else enc
         )
     else:
         df["Encounter_grouped"] = "Unknown"
