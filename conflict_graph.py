@@ -1,4 +1,4 @@
-# full_dashboard_with_trend.py
+# full_dashboard_with_trend_updated.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -52,7 +52,6 @@ if uploaded_conflict_file:
     # -----------------------------
     st.subheader("📅 Daily Distribution of Conflicts")
     daily_conflicts = df.groupby("Day_only").size().reset_index(name="Number of Conflicts").sort_values("Day_only")
-    # Add trend line (rolling mean)
     daily_conflicts["Trend"] = daily_conflicts["Number of Conflicts"].rolling(window=3, min_periods=1).mean()
     fig_daily = px.bar(daily_conflicts, x="Day_only", y="Number of Conflicts", width=900, height=500)
     fig_daily.add_scatter(x=daily_conflicts["Day_only"], y=daily_conflicts["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
@@ -75,7 +74,6 @@ if uploaded_conflict_file:
     hour_count = df_temp.groupby("Hour").size().reindex(hour_bins, fill_value=0).reset_index()
     hour_count.columns = ["Hour", "Number of Conflicts"]
     hour_count["Hour Interval"] = [f"{h}:00 - {h+1}:00" for h in hour_count["Hour"]]
-    # Trend line
     hour_count["Trend"] = hour_count["Number of Conflicts"].rolling(window=2, min_periods=1).mean()
     fig_hourly = px.bar(hour_count, x="Hour Interval", y="Number of Conflicts", width=900, height=500)
     fig_hourly.add_scatter(x=hour_count["Hour Interval"], y=hour_count["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
@@ -141,43 +139,94 @@ if uploaded_conflict_file:
     # HISTOGRAMS
     # -----------------------------
     display_labels = {
-        "ttc": "TTC",
-        "ttc_deltav": "TTC DeltaV",
+        "ttc": "TTC (s)",
+        "ttc_deltav": "TTC ΔV",
         "total_conflict_duration_sec": "Conflict duration (TTC<3), sec",
-        "pet": "PET",
-        "Gap_time": "Gap time",
-        "Gap_distance": "Gap distance"
+        "pet": "PET (s)",
+        "Gap_time": "Gap time (s)",
+        "Gap_distance": "Gap distance (m)",
+        "DRAC_at_TTC": "Max DRAC (m/s²)",     # ✅ new
+        "DeltaV": "Delta-V (km/h)"         # ✅ new
     }
 
     conflict_hist_vars = {
-        "Rear-End": ["ttc", "ttc_deltav", "total_conflict_duration_sec"],
-        "VRU": ["pet", "Gap_time", "Gap_distance"],
-        "Merging": ["pet", "Gap_time", "Gap_distance"]
+        "Rear-End": ["ttc", "ttc_deltav", "total_conflict_duration_sec", "DRAC_at_TTC"],  # ✅ added DRAC_at_TTC
+        "VRU": ["pet", "Gap_time", "Gap_distance", "DeltaV"],                          # ✅ added DeltaV
+        "Merging": ["pet", "Gap_time", "Gap_distance", "DeltaV"]                       # ✅ added DeltaV
     }
 
     bin_widths = {
         "ttc": 0.5,
         "ttc_deltav": 2,
-        "total_conflict_duration_sec": 0.5,
+        "total_conflict_duration_sec": 1,
         "pet": 0.5,
-        "Gap_time": 0.5,
-        "Gap_distance": 1
+        "Gap_time": 1,
+        "Gap_distance": 2,
+        "DRAC_at_TTC": 1,
+        "DeltaV": 2
     }
+
+    overflow_bins = {
+    "ttc": 3,                       # seconds
+    "ttc_deltav": 12,               # m/s or your unit
+    "total_conflict_duration_sec": 3,
+    "pet": 4,                       # seconds
+    "Gap_time": 4,                 # seconds
+    "Gap_distance": 10,             # meters
+    "DRAC_at_TTC": 10,              # m/s²
+    "DeltaV": 12                    # km/h
+}
+
 
     def plot_histogram_bins(df_in, column, title):
         if column not in df_in.columns or df_in[column].dropna().empty:
             st.info(f"No {title} values available")
             return
-        df_in = df_in.copy()
-        max_val = df_in[column].max()
+
+        df_plot = df_in[[column]].dropna().copy()
+
         bin_width = bin_widths.get(column, 0.5)
-        bins = list(np.arange(0, max_val + bin_width, bin_width))
-        df_in["Bin"] = pd.cut(df_in[column], bins=bins, include_lowest=True)
-        bin_counts = df_in.groupby("Bin").size().reset_index(name="Frequency")
-        bin_counts["Bin_label"] = bin_counts["Bin"].apply(lambda x: f"{x.left:.1f}-{x.right:.1f}")
-        fig = px.bar(bin_counts, x="Bin_label", y="Frequency", title=title)
-        fig.update_layout(xaxis_title=title, yaxis_title="Frequency", title_font_size=20)
+        overflow_max = overflow_bins.get(column, df_plot[column].max())
+
+        # Clip values to overflow max
+        df_plot[column + "_clipped"] = df_plot[column].clip(upper=overflow_max)
+
+        # Define bins including overflow
+        bins = list(np.arange(0, overflow_max + bin_width, bin_width))
+        bins.append(np.inf)
+
+        labels = [
+            f"{bins[i]:.1f}-{bins[i+1]:.1f}" if np.isfinite(bins[i+1])
+            else f">{overflow_max:.1f}"
+            for i in range(len(bins) - 1)
+        ]
+
+        df_plot["Bin"] = pd.cut(
+            df_plot[column + "_clipped"],
+            bins=bins,
+            labels=labels,
+            include_lowest=True,
+            right=False
+        )
+
+        bin_counts = df_plot["Bin"].value_counts().sort_index().reset_index()
+        bin_counts.columns = ["Bin_label", "Frequency"]
+
+        fig = px.bar(
+            bin_counts,
+            x="Bin_label",
+            y="Frequency",
+            title=title
+        )
+
+        fig.update_layout(
+            xaxis_title=title,
+            yaxis_title="Frequency",
+            title_font_size=20
+        )
+
         st.plotly_chart(fig, use_container_width=True)
+
 
     for conflict_type in df["Encounter_grouped"].unique():
         st.markdown(f"### {conflict_type} Conflicts")
@@ -227,7 +276,7 @@ if uploaded_conflict_file:
         "VRU": ("pet_lat", "pet_lng"),
         "Merging": ("pet_lat", "pet_lng")
     }
-    zoom = st.slider("Select Heatmap Zoom Level", 12, 22, 17)
+    zoom = st.slider("Select Heatmap Zoom Level", 12, 22, 19)
     map_width, map_height = 700, 700
     cols = st.columns(3)
 
@@ -278,12 +327,10 @@ if uploaded_volume_file:
         df_vol["Date"] = pd.to_datetime(df_vol["Date"], errors="coerce")
         df_vol["Day_only"] = df_vol["Date"].dt.date
 
-        # Sum numeric vehicle columns
         vehicle_cols = df_vol.columns[3:]
         vehicle_cols_numeric = df_vol[vehicle_cols].select_dtypes(include=np.number).columns
         df_vol["Total Volume"] = df_vol[vehicle_cols_numeric].sum(axis=1)
 
-        # Hour calculation
         df_vol["IntervalStart"] = pd.to_datetime(df_vol["IntervalStart"], errors="coerce").dt.hour
         df_vol["IntervalEnd"] = pd.to_datetime(df_vol["IntervalEnd"], errors="coerce").dt.hour
         df_vol["Hour"] = ((df_vol["IntervalStart"] + df_vol["IntervalEnd"]) / 2).astype(int)
@@ -293,9 +340,6 @@ if uploaded_volume_file:
         hourly_volume.columns = ["Hour", "Total Volume"]
         hourly_volume["Hour Interval"] = [f"{h}:00 - {h+1}:00" for h in hourly_volume["Hour"]]
 
-        # -----------------------------
-        # Side by side plot
-        # -----------------------------
         cols_vol = st.columns(2)
         with cols_vol[0]:
             daily_volume = df_vol.groupby("Day_only")["Total Volume"].sum().reset_index()
