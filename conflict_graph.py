@@ -146,11 +146,12 @@ if uploaded_conflict_file:
         "Gap_time": "Gap time (s)",
         "Gap_distance": "Gap distance (m)",
         "max_DRAC": "Max DRAC (m/s²)",     # ✅ new
-        "DeltaV": "Delta-V (km/h)"         # ✅ new
+        "DeltaV": "Delta-V (km/h)" ,
+        "mttc_ttc": "MTTC/TTC"        # ✅ new
     }
 
     conflict_hist_vars = {
-        "Rear-End": ["ttc", "ttc_deltav", "total_conflict_duration_sec", "max_DRAC"],  # ✅ added max_DRAC
+        "Rear-End": ["ttc", "ttc_deltav", "total_conflict_duration_sec", "max_DRAC", "mttc_ttc"],  # ✅ added max_DRAC and mttc_ttc
         "VRU": ["pet", "Gap_time", "Gap_distance", "DeltaV"],                          # ✅ added DeltaV
         "Merging": ["pet", "Gap_time", "Gap_distance", "DeltaV"]                       # ✅ added DeltaV
     }
@@ -166,10 +167,11 @@ if uploaded_conflict_file:
         "total_conflict_duration_sec": 0.5,
         "pet": 0.5,
         "Gap_time": 1,
+        "mttc_ttc": 0.5
     }
 
-    force_zero_underflow = {"ttc", "ttc_deltav", "total_conflict_duration_sec", "pet", "Gap_time"}
-    force_zero_overflow = {"ttc", "ttc_deltav", "total_conflict_duration_sec", "pet", "Gap_time"}
+    force_zero_underflow = {"ttc", "ttc_deltav", "total_conflict_duration_sec", "pet", "Gap_time", "mttc_ttc"}
+    force_zero_overflow = {"ttc", "ttc_deltav", "total_conflict_duration_sec", "pet", "Gap_time", "mttc_ttc"}
 
     def safe_underflow(df, col):
         if col not in df.columns:
@@ -193,6 +195,7 @@ if uploaded_conflict_file:
 
     underflow_bins = {
         "ttc": 0,
+        "mttc_ttc": 0,
         "ttc_deltav": 0,
         "total_conflict_duration_sec": 0,
         "pet": 0,
@@ -204,6 +207,7 @@ if uploaded_conflict_file:
     
     overflow_bins = {
         "ttc": 3,
+        "mttc_ttc": 3,
         "ttc_deltav": 12,
         "total_conflict_duration_sec": 3,
         "pet": 4,
