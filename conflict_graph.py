@@ -145,38 +145,73 @@ if uploaded_conflict_file:
         "pet": "PET (s)",
         "Gap_time": "Gap time (s)",
         "Gap_distance": "Gap distance (m)",
-        "DRAC_at_TTC": "Max DRAC (m/s²)",     # ✅ new
+        "max_DRAC": "Max DRAC (m/s²)",     # ✅ new
         "DeltaV": "Delta-V (km/h)"         # ✅ new
     }
 
     conflict_hist_vars = {
-        "Rear-End": ["ttc", "ttc_deltav", "total_conflict_duration_sec", "DRAC_at_TTC"],  # ✅ added DRAC_at_TTC
+        "Rear-End": ["ttc", "ttc_deltav", "total_conflict_duration_sec", "max_DRAC"],  # ✅ added max_DRAC
         "VRU": ["pet", "Gap_time", "Gap_distance", "DeltaV"],                          # ✅ added DeltaV
         "Merging": ["pet", "Gap_time", "Gap_distance", "DeltaV"]                       # ✅ added DeltaV
     }
 
+
+    BIN_COUNT_CONTROL_VARS = {"Gap_distance", "DeltaV", "max_DRAC"}
+    MIN_BINS = 5
+    MAX_BINS = 6
+
     bin_widths = {
         "ttc": 0.5,
         "ttc_deltav": 2,
-        "total_conflict_duration_sec": 1,
+        "total_conflict_duration_sec": 0.5,
         "pet": 0.5,
         "Gap_time": 1,
-        "Gap_distance": 2,
-        "DRAC_at_TTC": 1,
-        "DeltaV": 2
     }
 
-    overflow_bins = {
-    "ttc": 3,                       # seconds
-    "ttc_deltav": 12,               # m/s or your unit
-    "total_conflict_duration_sec": 3,
-    "pet": 4,                       # seconds
-    "Gap_time": 4,                 # seconds
-    "Gap_distance": 10,             # meters
-    "DRAC_at_TTC": 10,              # m/s²
-    "DeltaV": 12                    # km/h
-}
+    force_zero_underflow = {"ttc", "ttc_deltav", "total_conflict_duration_sec", "pet", "Gap_time"}
+    force_zero_overflow = {"ttc", "ttc_deltav", "total_conflict_duration_sec", "pet", "Gap_time"}
 
+    def safe_underflow(df, col):
+        if col not in df.columns:
+            return 0
+        col_min = df[col].dropna().min()
+        if pd.isna(col_min):
+            return 0
+        if col in force_zero_underflow:
+            return 0
+        return col_min
+    
+    def safe_overflow(df, col):
+        if col not in df.columns:
+            return 0
+        col_max = df[col].dropna().max()
+        if pd.isna(col_max):
+            return 0
+        if col in force_zero_overflow:
+            return 0
+        return col_max
+
+    underflow_bins = {
+        "ttc": 0,
+        "ttc_deltav": 0,
+        "total_conflict_duration_sec": 0,
+        "pet": 0,
+        "Gap_time": 0,
+        "Gap_distance": safe_underflow(df, "Gap_distance"),
+        "max_DRAC": safe_underflow(df, "max_DRAC"),
+        "DeltaV": safe_underflow(df, "DeltaV")
+    }
+    
+    overflow_bins = {
+        "ttc": 3,
+        "ttc_deltav": 12,
+        "total_conflict_duration_sec": 3,
+        "pet": 4,
+        "Gap_time": 4,
+        "Gap_distance": safe_overflow(df, "Gap_distance"),
+        "max_DRAC": safe_overflow(df, "max_DRAC"),
+        "DeltaV": safe_overflow(df, "DeltaV")
+    }
 
     def plot_histogram_bins(df_in, column, title):
         if column not in df_in.columns or df_in[column].dropna().empty:
@@ -184,47 +219,56 @@ if uploaded_conflict_file:
             return
 
         df_plot = df_in[[column]].dropna().copy()
-
-        bin_width = bin_widths.get(column, 0.5)
+        underflow_min = underflow_bins.get(column, df_plot[column].min())
         overflow_max = overflow_bins.get(column, df_plot[column].max())
+        df_plot[column + "_clipped"] = df_plot[column].clip(lower=underflow_min, upper=overflow_max)
+        data_range = overflow_max - underflow_min
+        if data_range <= 0:
+            st.info("Not enough range to create bins")
+            return
+        base_bin_width = bin_widths.get(column, 0.5)
 
-        # Clip values to overflow max
-        df_plot[column + "_clipped"] = df_plot[column].clip(upper=overflow_max)
+        # ---------- BIN COUNT CONTROL ----------
+        if column in BIN_COUNT_CONTROL_VARS:
+            # Floor the start to nearest whole number or multiple of bin width
+            start = np.floor(underflow_min)
 
-        # Define bins including overflow
-        bins = list(np.arange(0, overflow_max + bin_width, bin_width))
-        bins.append(np.inf)
+            # Total data range from rounded start to overflow max
+            total_range = overflow_max - start
 
-        labels = [
-            f"{bins[i]:.1f}-{bins[i+1]:.1f}" if np.isfinite(bins[i+1])
-            else f">{overflow_max:.1f}"
-            for i in range(len(bins) - 1)
-        ]
+            # Decide bin width so number of bins is within MIN_BINS / MAX_BINS
+            bin_width = total_range / MAX_BINS  # default
+            n_bins = int(np.ceil(total_range / bin_width))
+            if n_bins < MIN_BINS:
+                bin_width = total_range / MIN_BINS
+            elif n_bins > MAX_BINS:
+                bin_width = total_range / MAX_BINS
 
-        df_plot["Bin"] = pd.cut(
-            df_plot[column + "_clipped"],
-            bins=bins,
-            labels=labels,
-            include_lowest=True,
-            right=False
-        )
+            # Build bins
+            bins = [start + i * bin_width for i in range(int(np.ceil(total_range / bin_width)) + 1)]
+            bins.append(np.inf)
 
+            # Labels
+            labels = [
+                f"{bins[i]:.1f}-{bins[i+1]:.1f}" for i in range(len(bins) - 2)
+            ] + [f">{overflow_max:.1f}"]
+
+        else:
+            bin_width = base_bin_width
+            bins = [underflow_min]
+            bins += list(np.arange(underflow_min + bin_width, overflow_max, bin_width))
+            bins.append(overflow_max)
+            bins.append(np.inf)
+            labels = ([f"≤{underflow_min:.2f}"] +
+                      [f"{bins[i]:.2f}-{bins[i+1]:.2f}" for i in range(1, len(bins)-2)] +
+                      [f">{overflow_max:.2f}"])
+
+        df_plot["Bin"] = pd.cut(df_plot[column + "_clipped"], bins=bins, labels=labels, include_lowest=True, right=True)
         bin_counts = df_plot["Bin"].value_counts().sort_index().reset_index()
         bin_counts.columns = ["Bin_label", "Frequency"]
 
-        fig = px.bar(
-            bin_counts,
-            x="Bin_label",
-            y="Frequency",
-            title=title
-        )
-
-        fig.update_layout(
-            xaxis_title=title,
-            yaxis_title="Frequency",
-            title_font_size=20
-        )
-
+        fig = px.bar(bin_counts, x="Bin_label", y="Frequency", title=f"{title}")
+        fig.update_layout(xaxis_title=title, yaxis_title="Frequency")
         st.plotly_chart(fig, use_container_width=True)
 
 
