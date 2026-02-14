@@ -86,8 +86,35 @@ if uploaded_conflict_file:
     encounter_counts = df["Encounter_grouped"].value_counts().reset_index()
     encounter_counts.columns = ["Encounter_type", "Count"]
     encounter_counts["Label"] = encounter_counts.apply(lambda row: f"{row['Encounter_type']}: ({row['Count']})", axis=1)
-    fig_pie = px.pie(encounter_counts, names="Label", values="Count", hole=0.3)
-    fig_pie.update_traces(textinfo="label+percent", insidetextorientation='radial')
+    # Fixed color mapping
+    color_map = {
+        "VRU": "red",
+        "Rear-End": "darkblue",
+        "Merging": "lightblue"
+    }
+    
+    fig_pie = px.pie(
+        encounter_counts,
+        names="Encounter_type",
+        values="Count",
+        hole=0.3,
+        color="Encounter_type",
+        color_discrete_map=color_map
+    )
+    
+    # Custom label formatting
+    fig_pie.update_traces(
+        text=[f"{row['Encounter_type']}: ({row['Count']})"
+              for _, row in encounter_counts.iterrows()],
+        textinfo="text+percent",
+        insidetextorientation="radial"
+    )
+    
+    st.plotly_chart(fig_pie, use_container_width=True)
+
+    
+    #fig_pie = px.pie(encounter_counts, names="Label", values="Count", hole=0.3)
+    #fig_pie.update_traces(textinfo="label+percent", insidetextorientation='radial')
     st.plotly_chart(fig_pie, use_container_width=True)
 
     # -----------------------------
@@ -423,3 +450,4 @@ if uploaded_volume_file:
             fig_hourly = px.bar(hourly_volume, x="Hour Interval", y="Total Volume", width=900, height=500)
             fig_hourly.add_scatter(x=hourly_volume["Hour Interval"], y=hourly_volume["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
             st.plotly_chart(fig_hourly, use_container_width=False)
+
