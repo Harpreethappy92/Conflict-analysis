@@ -121,11 +121,19 @@ if uploaded_conflict_file:
     
     # Disable auto sorting
     fig_pie.update_traces(sort=False)
+
+    fig_pie.update_traces(
+        textinfo="label+percent",
+        sort=False,
+        rotation=90,           # rotate start angle to 12 o'clock
+        direction="clockwise"  # draw slices clockwise
+    )
+
     
     # Start first slice at 12 o’clock
-    fig_pie.update_traces(rotation=90)
+       ## fig_pie.update_traces(rotation=90)
     
-    fig_pie.update_traces(textinfo="label+percent")
+    #fig_pie.update_traces(textinfo="label+percent")
     
     st.plotly_chart(fig_pie, use_container_width=True, key="pie_encounter")
 
@@ -468,6 +476,7 @@ if uploaded_volume_file:
             fig_hourly = px.bar(hourly_volume, x="Hour Interval", y="Total Volume", width=900, height=500)
             fig_hourly.add_scatter(x=hourly_volume["Hour Interval"], y=hourly_volume["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
             st.plotly_chart(fig_hourly, use_container_width=False)
+
 
 
 
