@@ -91,8 +91,7 @@ if uploaded_conflict_file:
     
     # Fixed order (new label)
     desired_order = ["Vehicle-VRU", "Rear-End", "Merging"]
-    
-    # Ensure all categories appear even if zero
+
     encounter_counts = (
         df["Encounter_grouped"]
         .value_counts()
@@ -102,7 +101,6 @@ if uploaded_conflict_file:
     
     encounter_counts.columns = ["Encounter_type", "Count"]
     
-    # Fixed color mapping
     color_map = {
         "Vehicle-VRU": "red",
         "Rear-End": "darkblue",
@@ -115,28 +113,20 @@ if uploaded_conflict_file:
         values="Count",
         hole=0.3,
         color="Encounter_type",
-        color_discrete_map=color_map,
-        category_orders={"Encounter_type": desired_order}
+        color_discrete_map=color_map
     )
     
-    # Disable auto sorting
-    fig_pie.update_traces(sort=False)
-
     fig_pie.update_traces(
-        textinfo="label+percent",
         sort=False,
-        rotation=90,           # rotate start angle to 12 o'clock
-        direction="clockwise"  # draw slices clockwise
+        direction="clockwise",
+        rotation=90,
+        textinfo="label+percent"
     )
-
-    
-    # Start first slice at 12 o’clock
-       ## fig_pie.update_traces(rotation=90)
-    
-    #fig_pie.update_traces(textinfo="label+percent")
     
     st.plotly_chart(fig_pie, use_container_width=True, key="pie_encounter")
 
+    
+    
 
     
     #fig_pie = px.pie(encounter_counts, names="Label", values="Count", hole=0.3)
@@ -476,6 +466,7 @@ if uploaded_volume_file:
             fig_hourly = px.bar(hourly_volume, x="Hour Interval", y="Total Volume", width=900, height=500)
             fig_hourly.add_scatter(x=hourly_volume["Hour Interval"], y=hourly_volume["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
             st.plotly_chart(fig_hourly, use_container_width=False)
+
 
 
 
