@@ -107,6 +107,15 @@ if uploaded_conflict_file:
         "Merging": "lightblue"
     }
     
+    # Calculate rotation so Vehicle-VRU is centered at 12 o’clock
+    total = encounter_counts["Count"].sum()
+    vru_count = encounter_counts.loc[
+        encounter_counts["Encounter_type"] == "Vehicle-VRU", "Count"
+    ].values[0]
+    
+    vru_fraction = vru_count / total if total > 0 else 0
+    rotation_angle = 90 - (vru_fraction * 360 / 2)
+    
     fig_pie = px.pie(
         encounter_counts,
         names="Encounter_type",
@@ -119,19 +128,12 @@ if uploaded_conflict_file:
     fig_pie.update_traces(
         sort=False,
         direction="clockwise",
-        rotation=90,
+        rotation=rotation_angle,
         textinfo="label+percent"
     )
     
     st.plotly_chart(fig_pie, use_container_width=True, key="pie_encounter")
 
-    
-    
-
-    
-    #fig_pie = px.pie(encounter_counts, names="Label", values="Count", hole=0.3)
-    #fig_pie.update_traces(textinfo="label+percent", insidetextorientation='radial')
-    #st.plotly_chart(fig_pie, use_container_width=True)
 
     # -----------------------------
     # ROAD USER PIE CHARTS
@@ -466,6 +468,7 @@ if uploaded_volume_file:
             fig_hourly = px.bar(hourly_volume, x="Hour Interval", y="Total Volume", width=900, height=500)
             fig_hourly.add_scatter(x=hourly_volume["Hour Interval"], y=hourly_volume["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
             st.plotly_chart(fig_hourly, use_container_width=False)
+
 
 
 
