@@ -84,37 +84,36 @@ if uploaded_conflict_file:
     # -----------------------------
     st.subheader("🥧 Distribution of Conflicts by Encounter Type")
 
-    # Rename VRU to Vehicle-VRU
-    df["Encounter_grouped"] = df["Encounter_grouped"].replace({
-        "VRU": "Vehicle-VRU"
-    })
-    
-    # Fixed order (new label)
+    # Fixed order
     desired_order = ["Vehicle-VRU", "Rear-End", "Merging"]
-
+    
+    # Counts in fixed order (even if some are 0)
     encounter_counts = (
         df["Encounter_grouped"]
+        .replace({"VRU": "Vehicle-VRU"})
         .value_counts()
         .reindex(desired_order, fill_value=0)
         .reset_index()
     )
-    
     encounter_counts.columns = ["Encounter_type", "Count"]
     
+    # Fixed colors
     color_map = {
         "Vehicle-VRU": "red",
         "Rear-End": "darkblue",
         "Merging": "lightblue"
     }
     
-    # Calculate rotation so Vehicle-VRU is centered at 12 o’clock
-    total = encounter_counts["Count"].sum()
-    vru_count = encounter_counts.loc[
-        encounter_counts["Encounter_type"] == "Vehicle-VRU", "Count"
-    ].values[0]
+    # ---- Force Vehicle-VRU to be centered at 12 o'clock ----
+    total = float(encounter_counts["Count"].sum())
+    vru_count = float(encounter_counts.loc[encounter_counts["Encounter_type"] == "Vehicle-VRU", "Count"].iloc[0])
     
-    vru_fraction = vru_count / total if total > 0 else 0
-    rotation_angle = 90 - (vru_fraction * 360 / 2)
+    theta = (vru_count / total) * 360.0 if total > 0 else 0.0  # Vehicle-VRU slice size in degrees
+    
+    # Plotly default 0° is at 3 o’clock. 12 o’clock is 90°.
+    # For clockwise pies: midpoint of first slice = start_angle - theta/2
+    # Set midpoint to 90°  => start_angle = 90° + theta/2
+    start_angle = 90.0 + (theta / 2.0)
     
     fig_pie = px.pie(
         encounter_counts,
@@ -128,11 +127,14 @@ if uploaded_conflict_file:
     fig_pie.update_traces(
         sort=False,
         direction="clockwise",
-        rotation=rotation_angle,
-        textinfo="label+percent"
+        rotation=start_angle,
+        # Show label + count + percent (frequency is Count)
+        texttemplate="%{label}<br>%{value} (%{percent})",
+        textposition="inside"
     )
     
     st.plotly_chart(fig_pie, use_container_width=True, key="pie_encounter")
+
 
 
     # -----------------------------
@@ -468,6 +470,7 @@ if uploaded_volume_file:
             fig_hourly = px.bar(hourly_volume, x="Hour Interval", y="Total Volume", width=900, height=500)
             fig_hourly.add_scatter(x=hourly_volume["Hour Interval"], y=hourly_volume["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
             st.plotly_chart(fig_hourly, use_container_width=False)
+
 
 
 
