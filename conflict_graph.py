@@ -96,7 +96,7 @@ if uploaded_conflict_file:
     
     color_map = {
         "Vehicle-VRU": "red",
-        "Rear-End": "darkblue",
+        "Rear-End": "Blue",
         "Merging": "lightblue"
     }
     
@@ -454,6 +454,7 @@ if uploaded_volume_file:
             fig_hourly = px.bar(hourly_volume, x="Hour Interval", y="Total Volume", width=900, height=500)
             fig_hourly.add_scatter(x=hourly_volume["Hour Interval"], y=hourly_volume["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
             st.plotly_chart(fig_hourly, use_container_width=False)
+
 
 
 
