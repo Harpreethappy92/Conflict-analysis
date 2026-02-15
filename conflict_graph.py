@@ -111,7 +111,7 @@ if uploaded_conflict_file:
     
     fig_pie.update_traces(
         sort=False,
-        rotation=90,  # start at 12 o’clock
+        rotation=0,  # start at 12 o’clock
         texttemplate="%{label}<br>%{value} (%{percent})",
         textposition="inside"
     )
@@ -454,6 +454,7 @@ if uploaded_volume_file:
             fig_hourly = px.bar(hourly_volume, x="Hour Interval", y="Total Volume", width=900, height=500)
             fig_hourly.add_scatter(x=hourly_volume["Hour Interval"], y=hourly_volume["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
             st.plotly_chart(fig_hourly, use_container_width=False)
+
 
 
 
