@@ -394,7 +394,7 @@ if uploaded_conflict_file:
 # =============================
 
 # =============================
-# 2️⃣ UPLOAD TRAFFIC VOLUME DATA
+# 2️⃣ UPLOAD TRAFFIC VOLUME DATA  (FULL, UPDATED)
 # =============================
 st.subheader("📂 Upload Traffic Volume Excel File")
 uploaded_volume_file = st.file_uploader(
@@ -403,6 +403,7 @@ uploaded_volume_file = st.file_uploader(
     key="volume_uploader"
 )
 
+# Exact sheet-name → category mapping (as you told)
 SHEET_TO_CATEGORY = {
     "Slip-lane Vehicles": "Slip-lane vehicles",
     "Merging Vehicles": "Merging vehicles",
@@ -416,7 +417,9 @@ def sum_data_block(df: pd.DataFrame, start_row_idx=1, start_col_idx=3) -> float:
       cols >= start_col_idx  (4th column)
     Non-numeric -> NaN -> ignored.
     """
-    if df.empty or df.shape[1] <= start_col_idx or df.shape[0] <= start_row_idx:
+    if df is None or df.empty:
+        return 0.0
+    if df.shape[0] <= start_row_idx or df.shape[1] <= start_col_idx:
         return 0.0
 
     block = df.iloc[start_row_idx:, start_col_idx:].copy()
@@ -427,91 +430,117 @@ def sum_data_block(df: pd.DataFrame, start_row_idx=1, start_col_idx=3) -> float:
 if uploaded_volume_file:
     xls = pd.ExcelFile(uploaded_volume_file)
 
-    # totals across all sheets (for final pie)
+    # Totals across sheets for final pie
     totals = {"Slip-lane vehicles": 0.0, "Merging vehicles": 0.0, "VRU": 0.0}
 
     for sheet in xls.sheet_names:
         st.markdown(f"### Traffic Volume - {sheet}")
         df_vol = pd.read_excel(uploaded_volume_file, sheet_name=sheet)
 
-        # -----------------------------
-        # Your existing daily/hourly charts (kept, but safe-guarded)
-        # -----------------------------
-        needed_cols = {"Date", "IntervalStart", "IntervalEnd"}
-        if needed_cols.issubset(df_vol.columns):
-            df_vol["Date"] = pd.to_datetime(df_vol["Date"], errors="coerce")
-            df_vol["Day_only"] = df_vol["Date"].dt.date
-
-            # Total volume per row = sum numeric columns from 4th column onward
-            candidate_cols = list(df_vol.columns[3:])
-            numeric_cols = df_vol[candidate_cols].select_dtypes(include=np.number).columns.tolist()
-            df_vol["Total Volume"] = df_vol[numeric_cols].sum(axis=1)
-
-            df_vol["IntervalStart"] = pd.to_datetime(df_vol["IntervalStart"], errors="coerce").dt.hour
-            df_vol["IntervalEnd"] = pd.to_datetime(df_vol["IntervalEnd"], errors="coerce").dt.hour
-            df_vol["Hour"] = ((df_vol["IntervalStart"] + df_vol["IntervalEnd"]) / 2).astype("Int64")
-
-            df_hour = df_vol[(df_vol["Hour"] >= 5) & (df_vol["Hour"] <= 19)]
-            hour_bins = list(range(5, 20))
-            hourly_volume = (
-                df_hour.groupby("Hour")["Total Volume"].sum()
-                .reindex(hour_bins, fill_value=0).reset_index()
-            )
-            hourly_volume.columns = ["Hour", "Total Volume"]
-            hourly_volume["Hour Interval"] = [f"{h}:00 - {h+1}:00" for h in hourly_volume["Hour"]]
-
-            cols_vol = st.columns(2)
-            with cols_vol[0]:
-                daily_volume = df_vol.groupby("Day_only")["Total Volume"].sum().reset_index()
-                daily_volume["Trend"] = daily_volume["Total Volume"].rolling(window=3, min_periods=1).mean()
-                daily_volume["Day_Label"] = pd.to_datetime(daily_volume["Day_only"]).dt.strftime("%d-%b (%a)")
-
-                fig_daily = px.bar(daily_volume, x="Day_Label", y="Total Volume", width=900, height=500)
-                fig_daily.add_scatter(
-                    x=daily_volume["Day_Label"],
-                    y=daily_volume["Trend"],
-                    mode="lines",
-                    name="Trend",
-                    line=dict(color="orange", width=3)
-                )
-                fig_daily.update_layout(xaxis_tickangle=-45)
-                st.plotly_chart(fig_daily, use_container_width=False)
-
-            with cols_vol[1]:
-                hourly_volume["Trend"] = hourly_volume["Total Volume"].rolling(window=2, min_periods=1).mean()
-                fig_hourly = px.bar(hourly_volume, x="Hour Interval", y="Total Volume", width=900, height=500)
-                fig_hourly.add_scatter(
-                    x=hourly_volume["Hour Interval"],
-                    y=hourly_volume["Trend"],
-                    mode="lines",
-                    name="Trend",
-                    line=dict(color="orange", width=3)
-                )
-                st.plotly_chart(fig_hourly, use_container_width=False)
-        else:
-            st.info("This sheet doesn’t have Date/IntervalStart/IntervalEnd — skipping daily/hourly charts.")
-
-        # -----------------------------
-        # ✅ Category totals for FINAL PIE (using your rule)
-        # Start: 2nd row + 4th column
-        # -----------------------------
-        sheet_total = sum_data_block(df_vol, start_row_idx=1, start_col_idx=3)
+        # -------------------------------------------------------
+        # ✅ PIE TOTAL for this sheet (your rule: 2nd row + 4th col)
+        # -------------------------------------------------------
+        sheet_total_for_pie = sum_data_block(df_vol, start_row_idx=1, start_col_idx=3)
 
         if sheet in SHEET_TO_CATEGORY:
-            cat = SHEET_TO_CATEGORY[sheet]
-            totals[cat] += sheet_total
+            totals[SHEET_TO_CATEGORY[sheet]] += sheet_total_for_pie
         else:
-            st.warning(f"Sheet '{sheet}' not recognised for pie totals. Expected one of: {list(SHEET_TO_CATEGORY.keys())}")
+            st.warning(
+                f"Sheet '{sheet}' not recognised for pie totals. "
+                f"Expected: {list(SHEET_TO_CATEGORY.keys())}"
+            )
 
         with st.expander("✅ Total used for final pie (this sheet)"):
             st.write("Sheet:", sheet)
             st.write("Mapped category:", SHEET_TO_CATEGORY.get(sheet, "Not used"))
             st.write("Summation rule: rows ≥ 2nd row, cols ≥ 4th column (numeric only)")
-            st.write("Sheet total:", sheet_total)
+            st.write("Sheet total:", sheet_total_for_pie)
 
-    # -----------------------------
-    # ✅ PIE CHART AT THE END
-    # -----------------------------
+        # -------------------------------------------------------
+        # DAILY/HOURLY CHARTS (same as your original, but fixed)
+        # -------------------------------------------------------
+        needed_cols = {"Date", "IntervalStart", "IntervalEnd"}
+        if not needed_cols.issubset(df_vol.columns):
+            st.info("This sheet doesn’t have Date/IntervalStart/IntervalEnd — skipping daily/hourly charts.")
+            continue
+
+        df_vol["Date"] = pd.to_datetime(df_vol["Date"], errors="coerce")
+        df_vol["Day_only"] = df_vol["Date"].dt.date
+
+        # Total Volume per row from numeric columns (starting from 4th column)
+        candidate_cols = list(df_vol.columns[3:])
+        numeric_cols = df_vol[candidate_cols].select_dtypes(include=np.number).columns.tolist()
+        if len(numeric_cols) == 0:
+            st.info("No numeric volume columns found from 4th column onward — skipping charts.")
+            continue
+
+        df_vol["Total Volume"] = df_vol[numeric_cols].sum(axis=1)
+
+        # Convert interval start/end to hour
+        start_h = pd.to_datetime(df_vol["IntervalStart"], errors="coerce").dt.hour
+        end_h   = pd.to_datetime(df_vol["IntervalEnd"], errors="coerce").dt.hour
+
+        # Mid-hour may become .5, so DO NOT astype Int64 directly.
+        # Floor keeps 7:00–8:00 → 7 (matches your hour-bin labels)
+        mid_h = (start_h + end_h) / 2
+        df_vol["Hour"] = np.floor(mid_h).astype("Int64")
+
+        # Filter 5AM–7PM
+        df_hour = df_vol[(df_vol["Hour"] >= 5) & (df_vol["Hour"] <= 19)]
+        hour_bins = list(range(5, 20))
+
+        hourly_volume = (
+            df_hour.groupby("Hour")["Total Volume"].sum()
+            .reindex(hour_bins, fill_value=0).reset_index()
+        )
+        hourly_volume.columns = ["Hour", "Total Volume"]
+        hourly_volume["Hour Interval"] = [f"{h}:00 - {h+1}:00" for h in hourly_volume["Hour"]]
+
+        cols_vol = st.columns(2)
+
+        with cols_vol[0]:
+            daily_volume = df_vol.groupby("Day_only")["Total Volume"].sum().reset_index()
+            daily_volume["Trend"] = daily_volume["Total Volume"].rolling(window=3, min_periods=1).mean()
+            daily_volume["Day_Label"] = pd.to_datetime(daily_volume["Day_only"]).dt.strftime("%d-%b (%a)")
+
+            fig_daily = px.bar(
+                daily_volume,
+                x="Day_Label",
+                y="Total Volume",
+                width=900,
+                height=500
+            )
+            fig_daily.add_scatter(
+                x=daily_volume["Day_Label"],
+                y=daily_volume["Trend"],
+                mode="lines",
+                name="Trend",
+                line=dict(color="orange", width=3)
+            )
+            fig_daily.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_daily, use_container_width=False)
+
+        with cols_vol[1]:
+            hourly_volume["Trend"] = hourly_volume["Total Volume"].rolling(window=2, min_periods=1).mean()
+            fig_hourly = px.bar(
+                hourly_volume,
+                x="Hour Interval",
+                y="Total Volume",
+                width=900,
+                height=500
+            )
+            fig_hourly.add_scatter(
+                x=hourly_volume["Hour Interval"],
+                y=hourly_volume["Trend"],
+                mode="lines",
+                name="Trend",
+                line=dict(color="orange", width=3)
+            )
+            st.plotly_chart(fig_hourly, use_container_width=False)
+
+    # -------------------------------------------------------
+    # ✅ FINAL PIE CHART (end)
+    # -------------------------------------------------------
     st.subheader("🥧 Total Volume Composition (Slip-lane vs Merging vs VRU)")
 
     pie_df = pd.DataFrame({
@@ -520,15 +549,25 @@ if uploaded_volume_file:
     })
 
     if pie_df["Total Volume"].sum() == 0:
-        st.warning("Pie totals are zero — check if the numeric data really starts at 2nd row and 4th column.")
+        st.warning(
+            "Pie totals are zero — check that your numeric data really starts at 2nd row and 4th column "
+            "and that the sheet names match exactly."
+        )
         st.dataframe(pie_df)
     else:
-        fig_pie_vol = px.pie(pie_df, names="Category", values="Total Volume", hole=0.25)
-        fig_pie_vol.update_traces(texttemplate="%{label}<br>%{value:.0f} (%{percent})", textposition="inside")
+        fig_pie_vol = px.pie(
+            pie_df,
+            names="Category",
+            values="Total Volume",
+            hole=0.25
+        )
+        fig_pie_vol.update_traces(
+            texttemplate="%{label}<br>%{value:.0f} (%{percent})",
+            textposition="inside"
+        )
         st.plotly_chart(fig_pie_vol, use_container_width=True)
-
-        # optional table
         st.dataframe(pie_df)
+
 
 
 
