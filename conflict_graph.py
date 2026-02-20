@@ -392,6 +392,8 @@ if uploaded_conflict_file:
 
 # =============================
 # =============================
+
+# =============================
 # 2️⃣ UPLOAD TRAFFIC VOLUME DATA
 # =============================
 st.subheader("📂 Upload Traffic Volume Excel File")
@@ -401,80 +403,46 @@ uploaded_volume_file = st.file_uploader(
     key="volume_uploader"
 )
 
-def _sheet_category(sheet_name: str) -> str:
-    s = str(sheet_name).strip().lower()
-    # classify by SHEET NAME (not column headers)
-    if "slip" in s:
-        return "Slip-lane vehicles"
-    if "merge" in s or "merg" in s:
-        return "Merging vehicles"
-    if "vru" in s or "ped" in s or "pedestrian" in s or "bike" in s or "bicycle" in s or "cycl" in s:
-        return "VRU"
-    return "Unknown"
+SHEET_TO_CATEGORY = {
+    "Slip-lane Vehicles": "Slip-lane vehicles",
+    "Merging Vehicles": "Merging vehicles",
+    "Pedestrians": "VRU"
+}
 
-def _sum_data_block(df: pd.DataFrame, start_row_idx=0, start_col_idx=3) -> float:
+def sum_data_block(df: pd.DataFrame, start_row_idx=1, start_col_idx=3) -> float:
     """
     Sum all numeric values in the rectangular block:
-      rows >= start_row_idx
-      cols >= start_col_idx
-    Non-numeric cells become NaN and are ignored.
+      rows >= start_row_idx  (2nd row)
+      cols >= start_col_idx  (4th column)
+    Non-numeric -> NaN -> ignored.
     """
-    if df.shape[1] <= start_col_idx:
+    if df.empty or df.shape[1] <= start_col_idx or df.shape[0] <= start_row_idx:
         return 0.0
 
     block = df.iloc[start_row_idx:, start_col_idx:].copy()
-
-    # Convert everything to numeric; non-numeric -> NaN
     block = block.apply(pd.to_numeric, errors="coerce")
-
-    # Sum only where numeric data exists
     total = float(block.sum(skipna=True).sum(skipna=True))
-    if np.isnan(total):
-        return 0.0
-    return total
+    return 0.0 if np.isnan(total) else total
 
 if uploaded_volume_file:
     xls = pd.ExcelFile(uploaded_volume_file)
 
-    # totals for the pie (across all sheets)
-    totals = {
-        "Slip-lane vehicles": 0.0,
-        "Merging vehicles": 0.0,
-        "VRU": 0.0,
-        "Unknown": 0.0
-    }
+    # totals across all sheets (for final pie)
+    totals = {"Slip-lane vehicles": 0.0, "Merging vehicles": 0.0, "VRU": 0.0}
 
     for sheet in xls.sheet_names:
         st.markdown(f"### Traffic Volume - {sheet}")
-
-        # Read normally first
         df_vol = pd.read_excel(uploaded_volume_file, sheet_name=sheet)
 
         # -----------------------------
-        # OPTIONAL: auto-drop first row if it looks like a title row
-        # We test the "data block" (col 4 onward) in the first dataframe row.
-        # If it's mostly non-numeric/NaN, drop row 0.
+        # Your existing daily/hourly charts (kept, but safe-guarded)
         # -----------------------------
-        if df_vol.shape[0] >= 2 and df_vol.shape[1] >= 4:
-            test_row = df_vol.iloc[0, 3:].copy()
-            test_row_num = pd.to_numeric(test_row, errors="coerce")
-            non_nan_ratio = test_row_num.notna().mean()
-
-            # If < 20% numeric, treat as a title row and drop it
-            if non_nan_ratio < 0.2:
-                df_vol = df_vol.iloc[1:].reset_index(drop=True)
-
-        # -----------------------------
-        # Your charts (unchanged logic, but keep them safe)
-        # -----------------------------
-        # These lines assume you have Date/IntervalStart/IntervalEnd columns.
-        # If a sheet doesn't have them, we just skip charts for that sheet.
         needed_cols = {"Date", "IntervalStart", "IntervalEnd"}
-        if needed_cols.issubset(set(df_vol.columns)):
+        if needed_cols.issubset(df_vol.columns):
             df_vol["Date"] = pd.to_datetime(df_vol["Date"], errors="coerce")
             df_vol["Day_only"] = df_vol["Date"].dt.date
 
-            # total volume per row from col 4 onwards (numeric only)
+            # Total volume per row = sum numeric columns from 4th column onward
             candidate_cols = list(df_vol.columns[3:])
             numeric_cols = df_vol[candidate_cols].select_dtypes(include=np.number).columns.tolist()
             df_vol["Total Volume"] = df_vol[numeric_cols].sum(axis=1)
@@ -498,13 +466,7 @@ if uploaded_volume_file:
                 daily_volume["Trend"] = daily_volume["Total Volume"].rolling(window=3, min_periods=1).mean()
                 daily_volume["Day_Label"] = pd.to_datetime(daily_volume["Day_only"]).dt.strftime("%d-%b (%a)")
 
-                fig_daily = px.bar(
-                    daily_volume,
-                    x="Day_Label",
-                    y="Total Volume",
-                    width=900,
-                    height=500
-                )
+                fig_daily = px.bar(daily_volume, x="Day_Label", y="Total Volume", width=900, height=500)
                 fig_daily.add_scatter(
                     x=daily_volume["Day_Label"],
                     y=daily_volume["Trend"],
@@ -517,13 +479,7 @@ if uploaded_volume_file:
 
             with cols_vol[1]:
                 hourly_volume["Trend"] = hourly_volume["Total Volume"].rolling(window=2, min_periods=1).mean()
-                fig_hourly = px.bar(
-                    hourly_volume,
-                    x="Hour Interval",
-                    y="Total Volume",
-                    width=900,
-                    height=500
-                )
+                fig_hourly = px.bar(hourly_volume, x="Hour Interval", y="Total Volume", width=900, height=500)
                 fig_hourly.add_scatter(
                     x=hourly_volume["Hour Interval"],
                     y=hourly_volume["Trend"],
@@ -533,21 +489,23 @@ if uploaded_volume_file:
                 )
                 st.plotly_chart(fig_hourly, use_container_width=False)
         else:
-            st.info("This sheet doesn't contain Date/IntervalStart/IntervalEnd — skipping daily/hourly charts.")
+            st.info("This sheet doesn’t have Date/IntervalStart/IntervalEnd — skipping daily/hourly charts.")
 
         # -----------------------------
-        # ✅ CATEGORY TOTALS USING DATA BLOCK RULE:
-        # counts start from 2nd row + 4th column
-        # In pandas (after reading), "2nd row" means we start at index 0 normally,
-        # but since you explicitly said 2nd row, we use start_row_idx=1.
+        # ✅ Category totals for FINAL PIE (using your rule)
+        # Start: 2nd row + 4th column
         # -----------------------------
-        sheet_total = _sum_data_block(df_vol, start_row_idx=1, start_col_idx=3)
+        sheet_total = sum_data_block(df_vol, start_row_idx=1, start_col_idx=3)
 
-        cat = _sheet_category(sheet)
-        totals[cat] = totals.get(cat, 0.0) + sheet_total
+        if sheet in SHEET_TO_CATEGORY:
+            cat = SHEET_TO_CATEGORY[sheet]
+            totals[cat] += sheet_total
+        else:
+            st.warning(f"Sheet '{sheet}' not recognised for pie totals. Expected one of: {list(SHEET_TO_CATEGORY.keys())}")
 
-        with st.expander("✅ Sheet total used for the final pie"):
-            st.write("Category (from sheet name):", cat)
+        with st.expander("✅ Total used for final pie (this sheet)"):
+            st.write("Sheet:", sheet)
+            st.write("Mapped category:", SHEET_TO_CATEGORY.get(sheet, "Not used"))
             st.write("Summation rule: rows ≥ 2nd row, cols ≥ 4th column (numeric only)")
             st.write("Sheet total:", sheet_total)
 
@@ -562,26 +520,16 @@ if uploaded_volume_file:
     })
 
     if pie_df["Total Volume"].sum() == 0:
-        st.warning(
-            "Pie totals are zero. That usually means the numeric data block wasn't found (col 4 onwards), "
-            "or sheets are not named with slip/merge/vru keywords."
-        )
-        st.write("Detected totals (including Unknown):", totals)
+        st.warning("Pie totals are zero — check if the numeric data really starts at 2nd row and 4th column.")
+        st.dataframe(pie_df)
     else:
-        fig_pie_vol = px.pie(
-            pie_df,
-            names="Category",
-            values="Total Volume",
-            hole=0.25
-        )
-        fig_pie_vol.update_traces(
-            texttemplate="%{label}<br>%{value:.0f} (%{percent})",
-            textposition="inside"
-        )
+        fig_pie_vol = px.pie(pie_df, names="Category", values="Total Volume", hole=0.25)
+        fig_pie_vol.update_traces(texttemplate="%{label}<br>%{value:.0f} (%{percent})", textposition="inside")
         st.plotly_chart(fig_pie_vol, use_container_width=True)
 
-        # optional: show numbers too
+        # optional table
         st.dataframe(pie_df)
+
 
 
 
