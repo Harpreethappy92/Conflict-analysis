@@ -638,7 +638,11 @@ else:
 
     st.caption(
         "Rate definition: (Conflict count / corresponding volume) × 100. "
-        "VRU uses Pedestrian volume; Rear-End uses Slip-lane vehicle vol
+        "VRU uses Pedestrian volume; Rear-End uses Slip-lane vehicle volume; "
+        "Merging uses Merging vehicle volume."
+    )
+
+
 
 
 
