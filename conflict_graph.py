@@ -642,6 +642,160 @@ else:
         "Merging uses Merging vehicle volume."
     )
 
+# =============================
+# 3️⃣ CONFLICT RATES (PER VOLUME + PER INTERACTION)
+# =============================
+st.subheader("📈 Conflict Rates (per Volume and per Interaction)")
+
+# --- guards ---
+if "conflict_df" not in st.session_state:
+    st.info("Upload the Conflict dataset first to compute rates.")
+elif "volume_totals" not in st.session_state:
+    st.info("Upload the Traffic Volume Excel file first to compute rates.")
+else:
+    df_conf = st.session_state["conflict_df"].copy()
+    totals = st.session_state["volume_totals"].copy()
+
+    # -----------------------------
+    # Conflict counts (from conflict df)
+    # -----------------------------
+    conflict_counts = df_conf["Encounter_grouped"].value_counts()
+
+    n_vru     = int(conflict_counts.get("VRU", 0))
+    n_rearend = int(conflict_counts.get("Rear-End", 0))
+    n_merging = int(conflict_counts.get("Merging", 0))
+
+    # -----------------------------
+    # Exposure volumes (from your volume sheets)
+    # -----------------------------
+    vol_vru     = float(totals.get("VRU", 0.0))                  # Pedestrians sheet total
+    vol_rearend = float(totals.get("Slip-lane vehicles", 0.0))   # Slip-lane Vehicles sheet total
+    vol_merging = float(totals.get("Merging vehicles", 0.0))     # Merging Vehicles sheet total
+
+    # -----------------------------
+    # Manual interaction inputs
+    # -----------------------------
+    st.markdown("### ✍️ Enter total interactions (manual)")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        inter_rearend = st.number_input("Rear-End interactions", min_value=0, value=0, step=1)
+    with c2:
+        inter_vru = st.number_input("VRU interactions", min_value=0, value=0, step=1)
+    with c3:
+        inter_merging = st.number_input("Merging interactions", min_value=0, value=0, step=1)
+
+    # -----------------------------
+    # Rate helpers
+    # -----------------------------
+    def safe_rate(n, exposure, multiplier=100.0):
+        """
+        Return (n / exposure) * multiplier, or NaN if exposure is 0/NaN.
+        """
+        if exposure is None:
+            return np.nan
+        try:
+            exposure = float(exposure)
+        except Exception:
+            return np.nan
+        if exposure <= 0 or np.isnan(exposure):
+            return np.nan
+        return (float(n) / exposure) * multiplier
+
+    # % per volume
+    rate_vru_vol     = safe_rate(n_vru, vol_vru, multiplier=100.0)
+    rate_rearend_vol = safe_rate(n_rearend, vol_rearend, multiplier=100.0)
+    rate_merging_vol = safe_rate(n_merging, vol_merging, multiplier=100.0)
+
+    # % per interaction
+    rate_vru_int     = safe_rate(n_vru, inter_vru, multiplier=100.0)
+    rate_rearend_int = safe_rate(n_rearend, inter_rearend, multiplier=100.0)
+    rate_merging_int = safe_rate(n_merging, inter_merging, multiplier=100.0)
+
+    # -----------------------------
+    # Output table
+    # -----------------------------
+    rates_df = pd.DataFrame([
+        {
+            "Conflict Type": "Rear-End",
+            "Conflicts": n_rearend,
+            "Volume Exposure": vol_rearend,
+            "Rate per Volume (%)": rate_rearend_vol,
+            "Interactions (manual)": inter_rearend,
+            "Rate per Interaction (%)": rate_rearend_int,
+        },
+        {
+            "Conflict Type": "VRU",
+            "Conflicts": n_vru,
+            "Volume Exposure": vol_vru,
+            "Rate per Volume (%)": rate_vru_vol,
+            "Interactions (manual)": inter_vru,
+            "Rate per Interaction (%)": rate_vru_int,
+        },
+        {
+            "Conflict Type": "Merging",
+            "Conflicts": n_merging,
+            "Volume Exposure": vol_merging,
+            "Rate per Volume (%)": rate_merging_vol,
+            "Interactions (manual)": inter_merging,
+            "Rate per Interaction (%)": rate_merging_int,
+        },
+    ])
+
+    # Pretty display
+    show_df = rates_df.copy()
+    show_df["Volume Exposure"] = show_df["Volume Exposure"].map(lambda x: f"{x:,.0f}")
+    show_df["Rate per Volume (%)"] = show_df["Rate per Volume (%)"].map(lambda x: "NA (0 volume)" if pd.isna(x) else f"{x:.4f}%")
+    show_df["Rate per Interaction (%)"] = show_df["Rate per Interaction (%)"].map(lambda x: "NA (0 interactions)" if pd.isna(x) else f"{x:.4f}%")
+
+    st.markdown("### 📋 Rates Summary")
+    st.dataframe(show_df, use_container_width=True)
+
+    # -----------------------------
+    # Bar charts
+    # -----------------------------
+    st.markdown("### 📊 Rate Comparison Charts")
+
+    chart_cols = st.columns(2)
+
+    # Rate per volume chart
+    plot_vol = rates_df.dropna(subset=["Rate per Volume (%)"])[["Conflict Type", "Rate per Volume (%)"]].copy()
+    with chart_cols[0]:
+        if plot_vol.empty:
+            st.warning("Cannot plot 'Rate per Volume' because exposure volume is zero for one or more categories.")
+        else:
+            fig_vol = px.bar(
+                plot_vol,
+                x="Conflict Type",
+                y="Rate per Volume (%)",
+                text=plot_vol["Rate per Volume (%)"].map(lambda x: f"{x:.4f}%"),
+                height=420
+            )
+            fig_vol.update_traces(textposition="outside")
+            fig_vol.update_layout(yaxis_title="Conflict Rate per Volume (%)", xaxis_title="")
+            st.plotly_chart(fig_vol, use_container_width=True)
+
+    # Rate per interaction chart
+    plot_int = rates_df.dropna(subset=["Rate per Interaction (%)"])[["Conflict Type", "Rate per Interaction (%)"]].copy()
+    with chart_cols[1]:
+        if plot_int.empty:
+            st.warning("Enter interaction counts (> 0) to plot 'Rate per Interaction'.")
+        else:
+            fig_int = px.bar(
+                plot_int,
+                x="Conflict Type",
+                y="Rate per Interaction (%)",
+                text=plot_int["Rate per Interaction (%)"].map(lambda x: f"{x:.4f}%"),
+                height=420
+            )
+            fig_int.update_traces(textposition="outside")
+            fig_int.update_layout(yaxis_title="Conflict Rate per Interaction (%)", xaxis_title="")
+            st.plotly_chart(fig_int, use_container_width=True)
+
+    st.caption(
+        "Definitions: Rate = (Conflict count / Exposure) × 100. "
+        "Exposure can be Volume (from traffic-volume sheets) or Interactions (manual inputs)."
+    )
+
 
 
 
