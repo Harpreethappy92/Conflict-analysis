@@ -46,6 +46,8 @@ if uploaded_conflict_file:
         )
     else:
         df["Encounter_grouped"] = "Unknown"
+    # ✅ Save conflict df for later rate calculation
+    st.session_state["conflict_df"] = df.copy()
 
     # -----------------------------
     # DAILY DISTRIBUTION
@@ -567,6 +569,76 @@ if uploaded_volume_file:
         )
         st.plotly_chart(fig_pie_vol, use_container_width=True)
         st.dataframe(pie_df)
+        # ✅ Save volume totals for later rate calculation
+        st.session_state["volume_totals"] = totals.copy()
+
+# =============================
+# 3️⃣ CONFLICT RATES (CONFLICTS PER VOLUME)
+# =============================
+st.subheader("📈 Conflict Rates by Category (Conflicts per Volume %)")
+
+if "conflict_df" not in st.session_state:
+    st.info("Upload the Conflict dataset to compute conflict rates.")
+elif "volume_totals" not in st.session_state:
+    st.info("Upload the Traffic Volume Excel file to compute conflict rates.")
+else:
+    df_conf = st.session_state["conflict_df"].copy()
+    totals = st.session_state["volume_totals"].copy()
+
+    # --- conflict counts ---
+    # Ensure VRU conflicts are counted correctly:
+    # Your encounter grouping earlier keeps "VRU" as "VRU" (not "Vehicle-VRU").
+    # We'll compute counts robustly.
+    conflict_counts = df_conf["Encounter_grouped"].value_counts()
+
+    n_vru      = int(conflict_counts.get("VRU", 0))
+    n_rearend  = int(conflict_counts.get("Rear-End", 0))
+    n_merging  = int(conflict_counts.get("Merging", 0))
+
+    # --- exposure (volume) ---
+    vol_vru     = float(totals.get("VRU", 0.0))                 # Pedestrians sheet
+    vol_rearend = float(totals.get("Slip-lane vehicles", 0.0))  # Slip-lane Vehicles sheet
+    vol_merging = float(totals.get("Merging vehicles", 0.0))    # Merging Vehicles sheet
+
+    def safe_rate(n, v):
+        return np.nan if (v is None or v == 0 or np.isnan(v)) else (n / v) * 100
+
+    rate_vru     = safe_rate(n_vru, vol_vru)
+    rate_rearend = safe_rate(n_rearend, vol_rearend)
+    rate_merging = safe_rate(n_merging, vol_merging)
+
+    rates_df = pd.DataFrame([
+        {"Conflict Type": "VRU",      "Conflicts": n_vru,     "Volume (Exposure)": vol_vru,     "Conflict Rate (%)": rate_vru},
+        {"Conflict Type": "Rear-End", "Conflicts": n_rearend, "Volume (Exposure)": vol_rearend, "Conflict Rate (%)": rate_rearend},
+        {"Conflict Type": "Merging",  "Conflicts": n_merging, "Volume (Exposure)": vol_merging, "Conflict Rate (%)": rate_merging},
+    ])
+
+    # Nice formatting for display
+    show_df = rates_df.copy()
+    show_df["Volume (Exposure)"] = show_df["Volume (Exposure)"].map(lambda x: f"{x:,.0f}")
+    show_df["Conflict Rate (%)"] = show_df["Conflict Rate (%)"].map(lambda x: "NA (0 volume)" if pd.isna(x) else f"{x:.4f}%")
+
+    st.dataframe(show_df, use_container_width=True)
+
+    # Bar chart for rates (numeric)
+    plot_df = rates_df.dropna(subset=["Conflict Rate (%)"]).copy()
+    if plot_df.empty:
+        st.warning("Cannot plot rates because one or more exposure volumes are zero.")
+    else:
+        fig_rate = px.bar(
+            plot_df,
+            x="Conflict Type",
+            y="Conflict Rate (%)",
+            text=plot_df["Conflict Rate (%)"].map(lambda x: f"{x:.4f}%"),
+            height=450
+        )
+        fig_rate.update_traces(textposition="outside")
+        fig_rate.update_layout(yaxis_title="Conflict Rate (%)", xaxis_title="")
+        st.plotly_chart(fig_rate, use_container_width=True)
+
+    st.caption(
+        "Rate definition: (Conflict count / corresponding volume) × 100. "
+        "VRU uses Pedestrian volume; Rear-End uses Slip-lane vehicle vol
 
 
 
