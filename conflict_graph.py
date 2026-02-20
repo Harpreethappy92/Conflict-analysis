@@ -21,7 +21,8 @@ uploaded_conflict_file = st.file_uploader(
     type=["csv", "xlsx"],
     key="conflict_uploader"
 )
-
+# ✅ Save conflict df for later rate calculation
+st.session_state["conflict_df"] = df.copy()
 if uploaded_conflict_file:
     if uploaded_conflict_file.name.endswith(".csv"):
         df = pd.read_csv(uploaded_conflict_file)
@@ -46,8 +47,7 @@ if uploaded_conflict_file:
         )
     else:
         df["Encounter_grouped"] = "Unknown"
-    # ✅ Save conflict df for later rate calculation
-    st.session_state["conflict_df"] = df.copy()
+
 
     # -----------------------------
     # DAILY DISTRIBUTION
@@ -639,6 +639,7 @@ else:
     st.caption(
         "Rate definition: (Conflict count / corresponding volume) × 100. "
         "VRU uses Pedestrian volume; Rear-End uses Slip-lane vehicle vol
+
 
 
 
