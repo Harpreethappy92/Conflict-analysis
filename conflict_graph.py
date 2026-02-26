@@ -1,4 +1,4 @@
-# full_dashboard_with_trend_updated.py
+# full_dashboard_single_streamlit_file.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -13,62 +13,128 @@ st.set_page_config(page_title="Traffic Conflict & Volume Dashboard", layout="wid
 st.title("📊 Traffic Conflict & Traffic Volume Dashboard")
 
 # =============================
-# 1️⃣ UPLOAD CONFLICT DATA
+# 1️⃣ UPLOAD ONE STREAMLIT FILE (EXCEL)
 # =============================
-st.subheader("📂 Upload Conflict Data (CSV or Excel)")
-uploaded_conflict_file = st.file_uploader(
-    "Upload conflict dataset",
-    type=["csv", "xlsx"],
-    key="conflict_uploader"
+st.subheader("📂 Upload Streamlit Excel File (one file)")
+uploaded_streamlit_file = st.file_uploader(
+    "Upload Streamlit Excel File (contains Combined, Combined_Thresholds_Final, and Volume sheets)",
+    type=["xlsx"],
+    key="streamlit_uploader"
 )
 
-if uploaded_conflict_file:
-    if uploaded_conflict_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_conflict_file)
-    else:
-        df = pd.read_excel(uploaded_conflict_file)
-    st.success(f"Loaded {len(df)} records × {len(df.columns)} columns (Conflict Data)")
+# Sheet names (as you specified)
+SHEET_CONFLICT_ALL = "Combined"
+SHEET_CONFLICT_FINAL = "Combined_Thresholds_Final"
 
+SHEET_SLIP = "Slip-lane Vehicles"
+SHEET_MERGING = "Merging Vehicles"
+SHEET_VRU_VOL = "VRU"
+
+# ---------- helper: Day conversions ----------
+def add_day_fields(df):
     # Excel date conversion
     if "Day" in df.columns:
         df["Day"] = pd.to_numeric(df["Day"], errors="coerce")
-        df["Day_dt"] = pd.to_datetime(df["Day"], unit='d', origin='1899-12-30')
+        df["Day_dt"] = pd.to_datetime(df["Day"], unit='d', origin='1899-12-30', errors="coerce")
         df["Day_only"] = df["Day_dt"].dt.date
-        df["Hour"] = (df["Day"] % 1 * 24).astype(int)
-    else:
-        st.error("No 'Day' column found in conflict dataset.")
-        st.stop()
+        df["Hour"] = (df["Day"] % 1 * 24).astype("Int64")
+    return df
 
-    # Map encounter types
+# ---------- helper: encounter grouping ----------
+def add_encounter_group(df):
     if "Encounter_type" in df.columns:
         df["Encounter_grouped"] = df["Encounter_type"].apply(
             lambda enc: "Merging" if enc in ["Adjacent-Approaches", "Opposing-through", "Opposing-Approaches"] else enc
         )
     else:
         df["Encounter_grouped"] = "Unknown"
-    # ✅ Save conflict df for later rate calculation
-    st.session_state["conflict_df"] = df.copy()
+    return df
 
+# ---------- helper: sum totals for volume pie/rates ----------
+def sum_data_block(df: pd.DataFrame, start_row_idx=1, start_col_idx=3) -> float:
+    """
+    Sum all numeric values in the rectangular block:
+      rows >= start_row_idx  (2nd row)
+      cols >= start_col_idx  (4th column)
+    Non-numeric -> NaN -> ignored.
+    """
+    if df is None or df.empty:
+        return 0.0
+    if df.shape[0] <= start_row_idx or df.shape[1] <= start_col_idx:
+        return 0.0
+
+    block = df.iloc[start_row_idx:, start_col_idx:].copy()
+    block = block.apply(pd.to_numeric, errors="coerce")
+    total = float(block.sum(skipna=True).sum(skipna=True))
+    return 0.0 if np.isnan(total) else total
+
+# ============================================================
+# LOAD THE SINGLE FILE + PREP DATAFRAMES
+# ============================================================
+if uploaded_streamlit_file:
+    xls = pd.ExcelFile(uploaded_streamlit_file)
+
+    # Read conflicts
+    if SHEET_CONFLICT_ALL not in xls.sheet_names:
+        st.error(f"Missing sheet '{SHEET_CONFLICT_ALL}' in uploaded file.")
+        st.stop()
+    if SHEET_CONFLICT_FINAL not in xls.sheet_names:
+        st.error(f"Missing sheet '{SHEET_CONFLICT_FINAL}' in uploaded file.")
+        st.stop()
+
+    df_all = pd.read_excel(uploaded_streamlit_file, sheet_name=SHEET_CONFLICT_ALL)
+    df_final = pd.read_excel(uploaded_streamlit_file, sheet_name=SHEET_CONFLICT_FINAL)
+
+    # Prep conflicts
+    df_all = add_day_fields(df_all)
+    df_final = add_day_fields(df_final)
+
+    df_all = add_encounter_group(df_all)
+    df_final = add_encounter_group(df_final)
+
+    # ✅ Save for later rate calculation (per your new logic)
+    # - conflict_df_final is used for daily/temporal/pies + severity plots + volume-rate numerator
+    # - conflict_df_all is used for interaction-rate denominator
+    st.session_state["conflict_df_final"] = df_final.copy()
+    st.session_state["conflict_df_all"] = df_all.copy()
+
+    st.success(
+        f"Loaded sheets ✅ | Final conflicts: {len(df_final)} rows | Combined (all): {len(df_all)} rows"
+    )
+
+    # ============================================================
     # -----------------------------
-    # DAILY DISTRIBUTION
+    # DAILY DISTRIBUTION (Final)
     # -----------------------------
     st.subheader("📅 Daily Distribution of Conflicts")
-    daily_conflicts = df.groupby("Day_only").size().reset_index(name="Number of Conflicts").sort_values("Day_only")
-    daily_conflicts["Trend"] = daily_conflicts["Number of Conflicts"].rolling(window=3, min_periods=1).mean()
-    fig_daily = px.bar(daily_conflicts, x="Day_only", y="Number of Conflicts", width=900, height=500)
-    fig_daily.add_scatter(x=daily_conflicts["Day_only"], y=daily_conflicts["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
-    fig_daily.update_layout(
-        xaxis=dict(
-            tickmode="array",
-            tickvals=daily_conflicts["Day_only"],
-            ticktext=[d.strftime("%d-%b (%a)") for d in pd.to_datetime(daily_conflicts["Day_only"])],
-            tickangle=-45
+    df = st.session_state["conflict_df_final"].copy()
+
+    if "Day" in df.columns:
+        daily_conflicts = df.groupby("Day_only").size().reset_index(name="Number of Conflicts").sort_values("Day_only")
+        daily_conflicts["Trend"] = daily_conflicts["Number of Conflicts"].rolling(window=3, min_periods=1).mean()
+        fig_daily = px.bar(daily_conflicts, x="Day_only", y="Number of Conflicts", width=900, height=500)
+        fig_daily.add_scatter(
+            x=daily_conflicts["Day_only"],
+            y=daily_conflicts["Trend"],
+            mode="lines",
+            name="Trend",
+            line=dict(color="orange", width=3)
         )
-    )
-    st.plotly_chart(fig_daily, use_container_width=False)
+        fig_daily.update_layout(
+            xaxis=dict(
+                tickmode="array",
+                tickvals=daily_conflicts["Day_only"],
+                ticktext=[d.strftime("%d-%b (%a)") for d in pd.to_datetime(daily_conflicts["Day_only"])],
+                tickangle=-45
+            )
+        )
+        st.plotly_chart(fig_daily, use_container_width=False)
+    else:
+        st.error("No 'Day' column found in conflict dataset.")
+        st.stop()
 
     # -----------------------------
-    # TEMPORAL DISTRIBUTION (5-19H)
+    # TEMPORAL DISTRIBUTION (5-19H) (Final)
     # -----------------------------
     st.subheader("⏱ Temporal Distribution of Conflicts (5 AM - 7 PM)")
     df_temp = df[(df["Hour"] >= 5) & (df["Hour"] <= 19)]
@@ -78,11 +144,17 @@ if uploaded_conflict_file:
     hour_count["Hour Interval"] = [f"{h}:00 - {h+1}:00" for h in hour_count["Hour"]]
     hour_count["Trend"] = hour_count["Number of Conflicts"].rolling(window=2, min_periods=1).mean()
     fig_hourly = px.bar(hour_count, x="Hour Interval", y="Number of Conflicts", width=900, height=500)
-    fig_hourly.add_scatter(x=hour_count["Hour Interval"], y=hour_count["Trend"], mode="lines", name="Trend", line=dict(color="orange", width=3))
+    fig_hourly.add_scatter(
+        x=hour_count["Hour Interval"],
+        y=hour_count["Trend"],
+        mode="lines",
+        name="Trend",
+        line=dict(color="orange", width=3)
+    )
     st.plotly_chart(fig_hourly, use_container_width=False)
 
     # -----------------------------
-    # ENCOUNTER TYPE PIE
+    # ENCOUNTER TYPE PIE (Final)
     # -----------------------------
     desired_order = ["Vehicle-VRU", "Merging", "Rear-End"]
 
@@ -93,15 +165,15 @@ if uploaded_conflict_file:
         .reindex(desired_order, fill_value=0)
         .reset_index()
     )
-    
+
     encounter_counts.columns = ["Encounter_type", "Count"]
-    
+
     color_map = {
         "Vehicle-VRU": "red",
         "Rear-End": "Blue",
         "Merging": "lightblue"
     }
-    
+
     fig_pie = px.pie(
         encounter_counts,
         names="Encounter_type",
@@ -110,23 +182,21 @@ if uploaded_conflict_file:
         color="Encounter_type",
         color_discrete_map=color_map
     )
-    
+
     fig_pie.update_traces(
         sort=False,
-        rotation=0,  # start at 12 o’clock
+        rotation=0,
         texttemplate="%{label}<br>%{value} (%{percent})",
         textposition="inside"
     )
-    
+
     st.plotly_chart(fig_pie, use_container_width=True, key="pie_encounter")
 
-
-
-
     # -----------------------------
-    # ROAD USER PIE CHARTS
+    # ROAD USER PIE CHARTS (Follower) (Final)
     # -----------------------------
     st.subheader("🛣 Conflict Count by Road User Type (Follower)")
+
     def map_roaduser_category(code):
         if code in [3, 23]:
             return "Passenger car"
@@ -153,7 +223,8 @@ if uploaded_conflict_file:
         counts = users2_mapped.value_counts().reset_index()
         counts.columns = ["Road User", "Count"]
         counts["Label"] = counts.apply(lambda row: f"{row['Road User']}: ({row['Count']})", axis=1)
-        fig = px.pie(counts, names="Label", values="Count", title=f"{conflict_name} Conflicts by Road User Type", hole=0.1)
+        fig = px.pie(counts, names="Label", values="Count",
+                     title=f"{conflict_name} Conflicts by Road User Type", hole=0.1)
         fig.update_traces(textinfo="label+percent", insidetextorientation='radial')
         st.plotly_chart(fig, use_container_width=True)
 
@@ -169,7 +240,7 @@ if uploaded_conflict_file:
         plot_roaduser2_pie_reduced(merging_df, "Merging")
 
     # -----------------------------
-    # HISTOGRAMS
+    # HISTOGRAMS (Final)
     # -----------------------------
     display_labels = {
         "ttc": "TTC (s)",
@@ -178,17 +249,16 @@ if uploaded_conflict_file:
         "pet": "PET (s)",
         "Gap_time": "Gap time (s)",
         "Gap_distance": "Gap distance (m)",
-        "max_DRAC": "Max DRAC (m/s²)",     # ✅ new
-        "DeltaV": "Delta-V (km/h)" ,
-        "mttc_ttc": "MTTC/TTC"        # ✅ new
+        "max_DRAC": "Max DRAC (m/s²)",
+        "DeltaV": "Delta-V (km/h)",
+        "mttc_ttc": "MTTC/TTC"
     }
 
     conflict_hist_vars = {
-        "Rear-End": ["ttc", "ttc_deltav", "total_conflict_duration_sec", "max_DRAC", "mttc_ttc"],  # ✅ added max_DRAC and mttc_ttc
-        "VRU": ["pet", "Gap_time", "Gap_distance", "DeltaV"],                          # ✅ added DeltaV
-        "Merging": ["pet", "Gap_time", "Gap_distance", "DeltaV"]                       # ✅ added DeltaV
+        "Rear-End": ["ttc", "ttc_deltav", "total_conflict_duration_sec", "max_DRAC", "mttc_ttc"],
+        "VRU": ["pet", "Gap_time", "Gap_distance", "DeltaV"],
+        "Merging": ["pet", "Gap_time", "Gap_distance", "DeltaV"]
     }
-
 
     BIN_COUNT_CONTROL_VARS = {"Gap_distance", "DeltaV", "max_DRAC"}
     MIN_BINS = 5
@@ -206,20 +276,20 @@ if uploaded_conflict_file:
     force_zero_underflow = {"ttc", "ttc_deltav", "total_conflict_duration_sec", "pet", "Gap_time", "mttc_ttc"}
     force_zero_overflow = {"ttc", "ttc_deltav", "total_conflict_duration_sec", "pet", "Gap_time", "mttc_ttc"}
 
-    def safe_underflow(df, col):
-        if col not in df.columns:
+    def safe_underflow(df_in, col):
+        if col not in df_in.columns:
             return 0
-        col_min = df[col].dropna().min()
+        col_min = df_in[col].dropna().min()
         if pd.isna(col_min):
             return 0
         if col in force_zero_underflow:
             return 0
         return col_min
-    
-    def safe_overflow(df, col):
-        if col not in df.columns:
+
+    def safe_overflow(df_in, col):
+        if col not in df_in.columns:
             return 0
-        col_max = df[col].dropna().max()
+        col_max = df_in[col].dropna().max()
         if pd.isna(col_max):
             return 0
         if col in force_zero_overflow:
@@ -237,7 +307,7 @@ if uploaded_conflict_file:
         "max_DRAC": safe_underflow(df, "max_DRAC"),
         "DeltaV": safe_underflow(df, "DeltaV")
     }
-    
+
     overflow_bins = {
         "ttc": 3,
         "mttc_ttc": 3,
@@ -267,28 +337,19 @@ if uploaded_conflict_file:
 
         # ---------- BIN COUNT CONTROL ----------
         if column in BIN_COUNT_CONTROL_VARS:
-            # Floor the start to nearest whole number or multiple of bin width
             start = np.floor(underflow_min)
-
-            # Total data range from rounded start to overflow max
             total_range = overflow_max - start
-
-            # Decide bin width so number of bins is within MIN_BINS / MAX_BINS
-            bin_width = total_range / MAX_BINS  # default
-            n_bins = int(np.ceil(total_range / bin_width))
-            if n_bins < MIN_BINS:
+            bin_width = total_range / MAX_BINS if total_range > 0 else base_bin_width
+            n_bins = int(np.ceil(total_range / bin_width)) if bin_width > 0 else MAX_BINS
+            if n_bins < MIN_BINS and total_range > 0:
                 bin_width = total_range / MIN_BINS
-            elif n_bins > MAX_BINS:
+            elif n_bins > MAX_BINS and total_range > 0:
                 bin_width = total_range / MAX_BINS
 
-            # Build bins
             bins = [start + i * bin_width for i in range(int(np.ceil(total_range / bin_width)) + 1)]
             bins.append(np.inf)
 
-            # Labels
-            labels = [
-                f"{bins[i]:.1f}-{bins[i+1]:.1f}" for i in range(len(bins) - 2)
-            ] + [f">{overflow_max:.1f}"]
+            labels = [f"{bins[i]:.1f}-{bins[i+1]:.1f}" for i in range(len(bins) - 2)] + [f">{overflow_max:.1f}"]
 
         else:
             bin_width = base_bin_width
@@ -300,14 +361,14 @@ if uploaded_conflict_file:
                       [f"{bins[i]:.2f}-{bins[i+1]:.2f}" for i in range(1, len(bins)-2)] +
                       [f">{overflow_max:.2f}"])
 
-        df_plot["Bin"] = pd.cut(df_plot[column + "_clipped"], bins=bins, labels=labels, include_lowest=True, right=True)
+        df_plot["Bin"] = pd.cut(df_plot[column + "_clipped"], bins=bins, labels=labels,
+                                include_lowest=True, right=True)
         bin_counts = df_plot["Bin"].value_counts().sort_index().reset_index()
         bin_counts.columns = ["Bin_label", "Frequency"]
 
         fig = px.bar(bin_counts, x="Bin_label", y="Frequency", title=f"{title}")
         fig.update_layout(xaxis_title=title, yaxis_title="Frequency")
         st.plotly_chart(fig, use_container_width=True)
-
 
     for conflict_type in df["Encounter_grouped"].unique():
         st.markdown(f"### {conflict_type} Conflicts")
@@ -321,7 +382,7 @@ if uploaded_conflict_file:
             i += 1
 
     # -----------------------------
-    # DESCRIPTIVE STATISTICS
+    # DESCRIPTIVE STATISTICS (Final)
     # -----------------------------
     st.subheader("📋 Descriptive Statistics by Conflict Type")
     rows = []
@@ -340,7 +401,8 @@ if uploaded_conflict_file:
                     "Max": round(desc["max"], 3)
                 }
             else:
-                row = {"Conflict Type": conflict_type, "Variable": display_name, "Count":0, "Mean":None, "Min":None, "Max":None}
+                row = {"Conflict Type": conflict_type, "Variable": display_name,
+                       "Count": 0, "Mean": None, "Min": None, "Max": None}
             rows.append(row)
     stats_df = pd.DataFrame(rows)
     stats_df["Conflict Type Display"] = stats_df["Conflict Type"]
@@ -348,10 +410,8 @@ if uploaded_conflict_file:
     stats_df = stats_df[["Conflict Type Display", "Variable", "Count", "Mean", "Min", "Max"]]
     st.dataframe(stats_df)
 
-
-
     # -----------------------------
-    # HEATMAPS
+    # HEATMAPS (Final)
     # -----------------------------
     st.subheader("🌍 Conflict Heatmaps by Type")
     heatmap_configs = {
@@ -367,6 +427,8 @@ if uploaded_conflict_file:
         if conflict_df.empty or lat_col not in conflict_df.columns or lon_col not in conflict_df.columns:
             return None
         conflict_df = conflict_df[(conflict_df[lat_col] != 0) & (conflict_df[lon_col] != 0)]
+        if conflict_df.empty:
+            return None
         center_lat = float(conflict_df[lat_col].mean())
         center_lon = float(conflict_df[lon_col].mean())
         m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles=None, max_zoom=22)
@@ -393,101 +455,63 @@ if uploaded_conflict_file:
                 st.info(f"No data for {conflict_type}")
 
 # =============================
+# 2️⃣ TRAFFIC VOLUME DATA (FROM SAME FILE)
 # =============================
+st.subheader("📂 Traffic Volume Data (from the same uploaded file)")
 
-# =============================
-# 2️⃣ UPLOAD TRAFFIC VOLUME DATA  (FULL, UPDATED)
-# =============================
-st.subheader("📂 Upload Traffic Volume Excel File")
-uploaded_volume_file = st.file_uploader(
-    "Upload Traffic Volume Excel File",
-    type=["xlsx"],
-    key="volume_uploader"
-)
+if uploaded_streamlit_file:
+    xls = pd.ExcelFile(uploaded_streamlit_file)
 
-# Exact sheet-name → category mapping (as you told)
-SHEET_TO_CATEGORY = {
-    "Slip-lane Vehicles": "Slip-lane vehicles",
-    "Merging Vehicles": "Merging vehicles",
-    "Pedestrians": "VRU"
-}
+    for req_sheet in [SHEET_SLIP, SHEET_MERGING, SHEET_VRU_VOL]:
+        if req_sheet not in xls.sheet_names:
+            st.error(f"Missing volume sheet '{req_sheet}' in uploaded file.")
+            st.stop()
 
-def sum_data_block(df: pd.DataFrame, start_row_idx=1, start_col_idx=3) -> float:
-    """
-    Sum all numeric values in the rectangular block:
-      rows >= start_row_idx  (2nd row)
-      cols >= start_col_idx  (4th column)
-    Non-numeric -> NaN -> ignored.
-    """
-    if df is None or df.empty:
-        return 0.0
-    if df.shape[0] <= start_row_idx or df.shape[1] <= start_col_idx:
-        return 0.0
+    # Read volume sheets
+    df_slip = pd.read_excel(uploaded_streamlit_file, sheet_name=SHEET_SLIP)
+    df_merg = pd.read_excel(uploaded_streamlit_file, sheet_name=SHEET_MERGING)
+    df_vruv = pd.read_excel(uploaded_streamlit_file, sheet_name=SHEET_VRU_VOL)
 
-    block = df.iloc[start_row_idx:, start_col_idx:].copy()
-    block = block.apply(pd.to_numeric, errors="coerce")
-    total = float(block.sum(skipna=True).sum(skipna=True))
-    return 0.0 if np.isnan(total) else total
+    # Totals across sheets for final pie + rate
+    totals = {
+        "Slip-lane vehicles": sum_data_block(df_slip, start_row_idx=1, start_col_idx=3),
+        "Merging vehicles": sum_data_block(df_merg, start_row_idx=1, start_col_idx=3),
+        "VRU": sum_data_block(df_vruv, start_row_idx=1, start_col_idx=3)
+    }
 
-if uploaded_volume_file:
-    xls = pd.ExcelFile(uploaded_volume_file)
+    # -------------------------------------------------------
+    # DAILY/HOURLY CHARTS (unchanged visualization logic)
+    # -------------------------------------------------------
+    def volume_section(df_vol, sheet_title):
+        st.markdown(f"### Traffic Volume - {sheet_title}")
 
-    # Totals across sheets for final pie
-    totals = {"Slip-lane vehicles": 0.0, "Merging vehicles": 0.0, "VRU": 0.0}
-
-    for sheet in xls.sheet_names:
-        st.markdown(f"### Traffic Volume - {sheet}")
-        df_vol = pd.read_excel(uploaded_volume_file, sheet_name=sheet)
-
-        # -------------------------------------------------------
-        # ✅ PIE TOTAL for this sheet (your rule: 2nd row + 4th col)
-        # -------------------------------------------------------
-        sheet_total_for_pie = sum_data_block(df_vol, start_row_idx=1, start_col_idx=3)
-
-        if sheet in SHEET_TO_CATEGORY:
-            totals[SHEET_TO_CATEGORY[sheet]] += sheet_total_for_pie
-        else:
-            st.warning(
-                f"Sheet '{sheet}' not recognised for pie totals. "
-                f"Expected: {list(SHEET_TO_CATEGORY.keys())}"
-            )
-
-        with st.expander("✅ Total used for final pie (this sheet)"):
-            st.write("Sheet:", sheet)
-            st.write("Mapped category:", SHEET_TO_CATEGORY.get(sheet, "Not used"))
-            st.write("Summation rule: rows ≥ 2nd row, cols ≥ 4th column (numeric only)")
-            st.write("Sheet total:", sheet_total_for_pie)
-
-        # -------------------------------------------------------
-        # DAILY/HOURLY CHARTS (same as your original, but fixed)
-        # -------------------------------------------------------
         needed_cols = {"Date", "IntervalStart", "IntervalEnd"}
         if not needed_cols.issubset(df_vol.columns):
             st.info("This sheet doesn’t have Date/IntervalStart/IntervalEnd — skipping daily/hourly charts.")
-            continue
+            return
 
+        df_vol = df_vol.copy()
         df_vol["Date"] = pd.to_datetime(df_vol["Date"], errors="coerce")
         df_vol["Day_only"] = df_vol["Date"].dt.date
 
-        # Total Volume per row from numeric columns (starting from 4th column)
         candidate_cols = list(df_vol.columns[3:])
         numeric_cols = df_vol[candidate_cols].select_dtypes(include=np.number).columns.tolist()
         if len(numeric_cols) == 0:
+            # try coercion
+            df_vol[candidate_cols] = df_vol[candidate_cols].apply(pd.to_numeric, errors="coerce")
+            numeric_cols = df_vol[candidate_cols].select_dtypes(include=np.number).columns.tolist()
+
+        if len(numeric_cols) == 0:
             st.info("No numeric volume columns found from 4th column onward — skipping charts.")
-            continue
+            return
 
         df_vol["Total Volume"] = df_vol[numeric_cols].sum(axis=1)
 
-        # Convert interval start/end to hour
         start_h = pd.to_datetime(df_vol["IntervalStart"], errors="coerce").dt.hour
-        end_h   = pd.to_datetime(df_vol["IntervalEnd"], errors="coerce").dt.hour
-
-        # Mid-hour may become .5, so DO NOT astype Int64 directly.
-        # Floor keeps 7:00–8:00 → 7 (matches your hour-bin labels)
+        end_h = pd.to_datetime(df_vol["IntervalEnd"], errors="coerce").dt.hour
         mid_h = (start_h + end_h) / 2
         df_vol["Hour"] = np.floor(mid_h).astype("Int64")
 
-        # Filter 5AM–7PM
         df_hour = df_vol[(df_vol["Hour"] >= 5) & (df_vol["Hour"] <= 19)]
         hour_bins = list(range(5, 20))
 
@@ -505,13 +529,7 @@ if uploaded_volume_file:
             daily_volume["Trend"] = daily_volume["Total Volume"].rolling(window=3, min_periods=1).mean()
             daily_volume["Day_Label"] = pd.to_datetime(daily_volume["Day_only"]).dt.strftime("%d-%b (%a)")
 
-            fig_daily = px.bar(
-                daily_volume,
-                x="Day_Label",
-                y="Total Volume",
-                width=900,
-                height=500
-            )
+            fig_daily = px.bar(daily_volume, x="Day_Label", y="Total Volume", width=900, height=500)
             fig_daily.add_scatter(
                 x=daily_volume["Day_Label"],
                 y=daily_volume["Trend"],
@@ -524,13 +542,7 @@ if uploaded_volume_file:
 
         with cols_vol[1]:
             hourly_volume["Trend"] = hourly_volume["Total Volume"].rolling(window=2, min_periods=1).mean()
-            fig_hourly = px.bar(
-                hourly_volume,
-                x="Hour Interval",
-                y="Total Volume",
-                width=900,
-                height=500
-            )
+            fig_hourly = px.bar(hourly_volume, x="Hour Interval", y="Total Volume", width=900, height=500)
             fig_hourly.add_scatter(
                 x=hourly_volume["Hour Interval"],
                 y=hourly_volume["Trend"],
@@ -540,8 +552,12 @@ if uploaded_volume_file:
             )
             st.plotly_chart(fig_hourly, use_container_width=False)
 
+    volume_section(df_slip, SHEET_SLIP)
+    volume_section(df_merg, SHEET_MERGING)
+    volume_section(df_vruv, SHEET_VRU_VOL)
+
     # -------------------------------------------------------
-    # ✅ FINAL PIE CHART (end)
+    # FINAL PIE CHART (unchanged visualization logic)
     # -------------------------------------------------------
     st.subheader("🥧 Total Volume Composition (Slip-lane vs Merging vs VRU)")
 
@@ -557,73 +573,74 @@ if uploaded_volume_file:
         )
         st.dataframe(pie_df)
     else:
-        fig_pie_vol = px.pie(
-            pie_df,
-            names="Category",
-            values="Total Volume",
-            hole=0.25
-        )
+        fig_pie_vol = px.pie(pie_df, names="Category", values="Total Volume", hole=0.25)
         fig_pie_vol.update_traces(
             texttemplate="%{label}<br>%{value:.0f} (%{percent})",
             textposition="inside"
         )
         st.plotly_chart(fig_pie_vol, use_container_width=True)
         st.dataframe(pie_df)
-        # ✅ Save volume totals for later rate calculation
-        st.session_state["volume_totals"] = totals.copy()
+
+    # Save totals for rate calculation (same session usage)
+    st.session_state["volume_totals"] = totals.copy()
 
 # =============================
-# 3️⃣ CONFLICT RATES (CONFLICTS PER VOLUME)
+# 3️⃣ CONFLICT RATES (NEW LOGIC)
 # =============================
-st.subheader("📈 Conflict Rates by Category (Conflicts per Volume %)")
+st.subheader("📈 Conflict Rates (Final conflicts per Volume and per Interaction)")
 
-if "conflict_df" not in st.session_state:
-    st.info("Upload the Conflict dataset to compute conflict rates.")
+if "conflict_df_final" not in st.session_state or "conflict_df_all" not in st.session_state:
+    st.info("Upload the Streamlit Excel file to compute conflict rates.")
 elif "volume_totals" not in st.session_state:
-    st.info("Upload the Traffic Volume Excel file to compute conflict rates.")
+    st.info("Volume totals not available (check volume sheets).")
 else:
-    df_conf = st.session_state["conflict_df"].copy()
+    df_final = st.session_state["conflict_df_final"].copy()
+    df_all = st.session_state["conflict_df_all"].copy()
     totals = st.session_state["volume_totals"].copy()
 
-    # --- conflict counts ---
-    # Ensure VRU conflicts are counted correctly:
-    # Your encounter grouping earlier keeps "VRU" as "VRU" (not "Vehicle-VRU").
-    # We'll compute counts robustly.
-    conflict_counts = df_conf["Encounter_grouped"].value_counts()
+    # --- counts from FINAL (numerator) ---
+    counts_final = df_final["Encounter_grouped"].value_counts()
+    n_vru_final = int(counts_final.get("VRU", 0))
+    n_rear_final = int(counts_final.get("Rear-End", 0))
+    n_merging_final = int(counts_final.get("Merging", 0))
 
-    n_vru      = int(conflict_counts.get("VRU", 0))
-    n_rearend  = int(conflict_counts.get("Rear-End", 0))
-    n_merging  = int(conflict_counts.get("Merging", 0))
+    # --- counts from COMBINED (denominator for interaction-rate) ---
+    counts_all = df_all["Encounter_grouped"].value_counts()
+    n_vru_all = int(counts_all.get("VRU", 0))
+    n_rear_all = int(counts_all.get("Rear-End", 0))
+    n_merging_all = int(counts_all.get("Merging", 0))
 
     # --- exposure (volume) ---
-    vol_vru     = float(totals.get("VRU", 0.0))                 # Pedestrians sheet
-    vol_rearend = float(totals.get("Slip-lane vehicles", 0.0))  # Slip-lane Vehicles sheet
-    vol_merging = float(totals.get("Merging vehicles", 0.0))    # Merging Vehicles sheet
+    vol_vru = float(totals.get("VRU", 0.0))
+    vol_rear = float(totals.get("Slip-lane vehicles", 0.0))
+    vol_merg = float(totals.get("Merging vehicles", 0.0))
 
-    def safe_rate(n, v):
-        return np.nan if (v is None or v == 0 or np.isnan(v)) else (n / v) * 100
+    def safe_rate(n, exposure):
+        return np.nan if (exposure is None or exposure == 0 or np.isnan(exposure)) else (n / exposure) * 100
 
-    rate_vru     = safe_rate(n_vru, vol_vru)
-    rate_rearend = safe_rate(n_rearend, vol_rearend)
-    rate_merging = safe_rate(n_merging, vol_merging)
+    # -----------------------------
+    # Rate per Volume (Final/Volume)
+    # -----------------------------
+    rate_vru_vol = safe_rate(n_vru_final, vol_vru)
+    rate_rear_vol = safe_rate(n_rear_final, vol_rear)
+    rate_merg_vol = safe_rate(n_merging_final, vol_merg)
 
-    rates_df = pd.DataFrame([
-        {"Conflict Type": "VRU",      "Conflicts": n_vru,     "Volume (Exposure)": vol_vru,     "Conflict Rate (%)": rate_vru},
-        {"Conflict Type": "Rear-End", "Conflicts": n_rearend, "Volume (Exposure)": vol_rearend, "Conflict Rate (%)": rate_rearend},
-        {"Conflict Type": "Merging",  "Conflicts": n_merging, "Volume (Exposure)": vol_merging, "Conflict Rate (%)": rate_merging},
+    rates_vol_df = pd.DataFrame([
+        {"Conflict Type": "VRU", "Final Conflicts": n_vru_final, "Volume (Exposure)": vol_vru, "Conflict Rate (%)": rate_vru_vol},
+        {"Conflict Type": "Rear-End", "Final Conflicts": n_rear_final, "Volume (Exposure)": vol_rear, "Conflict Rate (%)": rate_rear_vol},
+        {"Conflict Type": "Merging", "Final Conflicts": n_merging_final, "Volume (Exposure)": vol_merg, "Conflict Rate (%)": rate_merg_vol},
     ])
 
-    # Nice formatting for display
-    show_df = rates_df.copy()
-    show_df["Volume (Exposure)"] = show_df["Volume (Exposure)"].map(lambda x: f"{x:,.0f}")
-    show_df["Conflict Rate (%)"] = show_df["Conflict Rate (%)"].map(lambda x: "NA (0 volume)" if pd.isna(x) else f"{x:.4f}%")
+    show_vol = rates_vol_df.copy()
+    show_vol["Volume (Exposure)"] = show_vol["Volume (Exposure)"].map(lambda x: f"{x:,.0f}")
+    show_vol["Conflict Rate (%)"] = show_vol["Conflict Rate (%)"].map(lambda x: "NA (0 volume)" if pd.isna(x) else f"{x:.4f}%")
 
-    st.dataframe(show_df, use_container_width=True)
+    st.markdown("### 📌 Conflict Rate per Volume (Final / Volume)")
+    st.dataframe(show_vol, use_container_width=True)
 
-    # Bar chart for rates (numeric)
-    plot_df = rates_df.dropna(subset=["Conflict Rate (%)"]).copy()
+    plot_df = rates_vol_df.dropna(subset=["Conflict Rate (%)"]).copy()
     if plot_df.empty:
-        st.warning("Cannot plot rates because one or more exposure volumes are zero.")
+        st.warning("Cannot plot volume-based rates because one or more exposure volumes are zero.")
     else:
         fig_rate = px.bar(
             plot_df,
@@ -636,178 +653,42 @@ else:
         fig_rate.update_layout(yaxis_title="Conflict Rate (%)", xaxis_title="")
         st.plotly_chart(fig_rate, use_container_width=True)
 
-    st.caption(
-        "Rate definition: (Conflict count / corresponding volume) × 100. "
-        "VRU uses Pedestrian volume; Rear-End uses Slip-lane vehicle volume; "
-        "Merging uses Merging vehicle volume."
-    )
-
-# =============================
-# 3️⃣ CONFLICT RATES (PER VOLUME + PER INTERACTION)
-# =============================
-st.subheader("📈 Conflict Rates (per Volume and per Interaction)")
-
-# --- guards ---
-if "conflict_df" not in st.session_state:
-    st.info("Upload the Conflict dataset first to compute rates.")
-elif "volume_totals" not in st.session_state:
-    st.info("Upload the Traffic Volume Excel file first to compute rates.")
-else:
-    df_conf = st.session_state["conflict_df"].copy()
-    totals = st.session_state["volume_totals"].copy()
-
     # -----------------------------
-    # Conflict counts (from conflict df)
+    # Rate per Interaction (Final/Combined)
     # -----------------------------
-    conflict_counts = df_conf["Encounter_grouped"].value_counts()
+    rate_vru_int = safe_rate(n_vru_final, n_vru_all)
+    rate_rear_int = safe_rate(n_rear_final, n_rear_all)
+    rate_merg_int = safe_rate(n_merging_final, n_merging_all)
 
-    n_vru     = int(conflict_counts.get("VRU", 0))
-    n_rearend = int(conflict_counts.get("Rear-End", 0))
-    n_merging = int(conflict_counts.get("Merging", 0))
-
-    # -----------------------------
-    # Exposure volumes (from your volume sheets)
-    # -----------------------------
-    vol_vru     = float(totals.get("VRU", 0.0))                  # Pedestrians sheet total
-    vol_rearend = float(totals.get("Slip-lane vehicles", 0.0))   # Slip-lane Vehicles sheet total
-    vol_merging = float(totals.get("Merging vehicles", 0.0))     # Merging Vehicles sheet total
-
-    # -----------------------------
-    # Manual interaction inputs
-    # -----------------------------
-    st.markdown("### ✍️ Enter total interactions (manual)")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        inter_rearend = st.number_input("Rear-End interactions", min_value=0, value=0, step=1)
-    with c2:
-        inter_vru = st.number_input("VRU interactions", min_value=0, value=0, step=1)
-    with c3:
-        inter_merging = st.number_input("Merging interactions", min_value=0, value=0, step=1)
-
-    # -----------------------------
-    # Rate helpers
-    # -----------------------------
-    def safe_rate(n, exposure, multiplier=100.0):
-        """
-        Return (n / exposure) * multiplier, or NaN if exposure is 0/NaN.
-        """
-        if exposure is None:
-            return np.nan
-        try:
-            exposure = float(exposure)
-        except Exception:
-            return np.nan
-        if exposure <= 0 or np.isnan(exposure):
-            return np.nan
-        return (float(n) / exposure) * multiplier
-
-    # % per volume
-    rate_vru_vol     = safe_rate(n_vru, vol_vru, multiplier=100.0)
-    rate_rearend_vol = safe_rate(n_rearend, vol_rearend, multiplier=100.0)
-    rate_merging_vol = safe_rate(n_merging, vol_merging, multiplier=100.0)
-
-    # % per interaction
-    rate_vru_int     = safe_rate(n_vru, inter_vru, multiplier=100.0)
-    rate_rearend_int = safe_rate(n_rearend, inter_rearend, multiplier=100.0)
-    rate_merging_int = safe_rate(n_merging, inter_merging, multiplier=100.0)
-
-    # -----------------------------
-    # Output table
-    # -----------------------------
-    rates_df = pd.DataFrame([
-        {
-            "Conflict Type": "Rear-End",
-            "Conflicts": n_rearend,
-            "Volume Exposure": vol_rearend,
-            "Rate per Volume (%)": rate_rearend_vol,
-            "Interactions (manual)": inter_rearend,
-            "Rate per Interaction (%)": rate_rearend_int,
-        },
-        {
-            "Conflict Type": "VRU",
-            "Conflicts": n_vru,
-            "Volume Exposure": vol_vru,
-            "Rate per Volume (%)": rate_vru_vol,
-            "Interactions (manual)": inter_vru,
-            "Rate per Interaction (%)": rate_vru_int,
-        },
-        {
-            "Conflict Type": "Merging",
-            "Conflicts": n_merging,
-            "Volume Exposure": vol_merging,
-            "Rate per Volume (%)": rate_merging_vol,
-            "Interactions (manual)": inter_merging,
-            "Rate per Interaction (%)": rate_merging_int,
-        },
+    rates_int_df = pd.DataFrame([
+        {"Conflict Type": "Rear-End", "Final Conflicts": n_rear_final, "All Interactions (Combined)": n_rear_all, "Conflict Rate (%)": rate_rear_int},
+        {"Conflict Type": "VRU", "Final Conflicts": n_vru_final, "All Interactions (Combined)": n_vru_all, "Conflict Rate (%)": rate_vru_int},
+        {"Conflict Type": "Merging", "Final Conflicts": n_merging_final, "All Interactions (Combined)": n_merging_all, "Conflict Rate (%)": rate_merg_int},
     ])
 
-    # Pretty display
-    show_df = rates_df.copy()
-    show_df["Volume Exposure"] = show_df["Volume Exposure"].map(lambda x: f"{x:,.0f}")
-    show_df["Rate per Volume (%)"] = show_df["Rate per Volume (%)"].map(lambda x: "NA (0 volume)" if pd.isna(x) else f"{x:.4f}%")
-    show_df["Rate per Interaction (%)"] = show_df["Rate per Interaction (%)"].map(lambda x: "NA (0 interactions)" if pd.isna(x) else f"{x:.4f}%")
+    show_int = rates_int_df.copy()
+    show_int["Conflict Rate (%)"] = show_int["Conflict Rate (%)"].map(lambda x: "NA (0 interactions)" if pd.isna(x) else f"{x:.4f}%")
 
-    st.markdown("### 📋 Rates Summary")
-    st.dataframe(show_df, use_container_width=True)
+    st.markdown("### 📌 Conflict Rate per Interaction (Final / Combined)")
+    st.dataframe(show_int, use_container_width=True)
 
-    # -----------------------------
-    # Bar charts
-    # -----------------------------
-    st.markdown("### 📊 Rate Comparison Charts")
-
-    chart_cols = st.columns(2)
-
-    # Rate per volume chart
-    plot_vol = rates_df.dropna(subset=["Rate per Volume (%)"])[["Conflict Type", "Rate per Volume (%)"]].copy()
-    with chart_cols[0]:
-        if plot_vol.empty:
-            st.warning("Cannot plot 'Rate per Volume' because exposure volume is zero for one or more categories.")
-        else:
-            fig_vol = px.bar(
-                plot_vol,
-                x="Conflict Type",
-                y="Rate per Volume (%)",
-                text=plot_vol["Rate per Volume (%)"].map(lambda x: f"{x:.4f}%"),
-                height=420
-            )
-            fig_vol.update_traces(textposition="outside")
-            fig_vol.update_layout(yaxis_title="Conflict Rate per Volume (%)", xaxis_title="")
-            st.plotly_chart(fig_vol, use_container_width=True)
-
-    # Rate per interaction chart
-    plot_int = rates_df.dropna(subset=["Rate per Interaction (%)"])[["Conflict Type", "Rate per Interaction (%)"]].copy()
-    with chart_cols[1]:
-        if plot_int.empty:
-            st.warning("Enter interaction counts (> 0) to plot 'Rate per Interaction'.")
-        else:
-            fig_int = px.bar(
-                plot_int,
-                x="Conflict Type",
-                y="Rate per Interaction (%)",
-                text=plot_int["Rate per Interaction (%)"].map(lambda x: f"{x:.4f}%"),
-                height=420
-            )
-            fig_int.update_traces(textposition="outside")
-            fig_int.update_layout(yaxis_title="Conflict Rate per Interaction (%)", xaxis_title="")
-            st.plotly_chart(fig_int, use_container_width=True)
+    plot_int = rates_int_df.dropna(subset=["Conflict Rate (%)"]).copy()
+    if plot_int.empty:
+        st.warning("Cannot plot interaction-based rates because one or more interaction counts are zero.")
+    else:
+        fig_int = px.bar(
+            plot_int,
+            x="Conflict Type",
+            y="Conflict Rate (%)",
+            text=plot_int["Conflict Rate (%)"].map(lambda x: f"{x:.4f}%"),
+            height=420
+        )
+        fig_int.update_traces(textposition="outside")
+        fig_int.update_layout(yaxis_title="Conflict Rate (%)", xaxis_title="")
+        st.plotly_chart(fig_int, use_container_width=True)
 
     st.caption(
-        "Definitions: Rate = (Conflict count / Exposure) × 100. "
-        "Exposure can be Volume (from traffic-volume sheets) or Interactions (manual inputs)."
+        "Definitions: "
+        "Per Volume rate = (Final conflict count / Volume exposure) × 100. "
+        "Per Interaction rate = (Final conflict count / All interactions in Combined) × 100."
     )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
