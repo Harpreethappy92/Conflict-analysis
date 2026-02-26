@@ -32,12 +32,15 @@ SHEET_VRU_VOL = "VRU"
 
 # ---------- helper: Day conversions ----------
 def add_day_fields(df):
-    # Excel date conversion
     if "Day" in df.columns:
         df["Day"] = pd.to_numeric(df["Day"], errors="coerce")
-        df["Day_dt"] = pd.to_datetime(df["Day"], unit='d', origin='1899-12-30', errors="coerce")
+        df["Day_dt"] = pd.to_datetime(df["Day"], unit="d", origin="1899-12-30", errors="coerce")
         df["Day_only"] = df["Day_dt"].dt.date
-        df["Hour"] = (df["Day"] % 1 * 24).astype("Int64")
+
+        # ✅ FIX: avoid unsafe Int64 cast from floats/NaNs
+        hour_float = (df["Day"] % 1) * 24
+        df["Hour"] = np.floor(hour_float).astype("Int64")  # safe nullable int
+
     return df
 
 # ---------- helper: encounter grouping ----------
@@ -692,3 +695,4 @@ else:
         "Per Volume rate = (Final conflict count / Volume exposure) × 100. "
         "Per Interaction rate = (Final conflict count / All interactions in Combined) × 100."
     )
+
