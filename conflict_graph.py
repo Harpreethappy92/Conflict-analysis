@@ -264,7 +264,7 @@ if uploaded_streamlit_file:
         "Merging": ["pet", "Gap_time", "Gap_distance", "DeltaV", "Time_Advantage"]
     }
 
-    BIN_COUNT_CONTROL_VARS = {"Gap_distance", "DeltaV", "max_DRAC"}
+    BIN_COUNT_CONTROL_VARS = {"Gap_distance", "DeltaV", "max_DRAC", "Time_Advantage"}
     MIN_BINS = 5
     MAX_BINS = 6
 
@@ -275,7 +275,7 @@ if uploaded_streamlit_file:
         "pet": 0.5,
         "Gap_time": 1,
         "MTTC": 0.5,
-        "Time_Advantage": 2
+        "Time_Advantage": 5
     }
 
     force_zero_underflow = {"ttc", "ttc_deltav", "critical_conflict_duration_sec", "pet", "Gap_time", "MTTC", "Time_Advantage"}
@@ -697,6 +697,7 @@ else:
         "Per Volume rate = (Final conflict count / Volume exposure) × 100. "
         "Per Interaction rate = (Final conflict count / All interactions in Combined) × 100."
     )
+
 
 
 
