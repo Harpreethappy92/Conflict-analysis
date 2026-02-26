@@ -248,17 +248,17 @@ if uploaded_streamlit_file:
     display_labels = {
         "ttc": "TTC (s)",
         "ttc_deltav": "TTC ΔV",
-        "total_conflict_duration_sec": "Conflict duration (TTC<3), sec",
+        "critical_conflict_duration_sec": "Conflict duration (TTC<3), sec",
         "pet": "PET (s)",
         "Gap_time": "Gap time (s)",
         "Gap_distance": "Gap distance (m)",
         "max_DRAC": "Max DRAC (m/s²)",
         "DeltaV": "Delta-V (km/h)",
-        "mttc_ttc": "MTTC/TTC"
+        "MTTC": "MTTC/TTC"
     }
 
     conflict_hist_vars = {
-        "Rear-End": ["ttc", "ttc_deltav", "total_conflict_duration_sec", "max_DRAC", "mttc_ttc"],
+        "Rear-End": ["ttc", "ttc_deltav", "critical_conflict_duration_sec", "max_DRAC", "MTTC"],
         "VRU": ["pet", "Gap_time", "Gap_distance", "DeltaV"],
         "Merging": ["pet", "Gap_time", "Gap_distance", "DeltaV"]
     }
@@ -270,14 +270,14 @@ if uploaded_streamlit_file:
     bin_widths = {
         "ttc": 0.5,
         "ttc_deltav": 2,
-        "total_conflict_duration_sec": 0.5,
+        "critical_conflict_duration_sec": 0.5,
         "pet": 0.5,
         "Gap_time": 1,
-        "mttc_ttc": 0.5
+        "MTTC": 0.5
     }
 
-    force_zero_underflow = {"ttc", "ttc_deltav", "total_conflict_duration_sec", "pet", "Gap_time", "mttc_ttc"}
-    force_zero_overflow = {"ttc", "ttc_deltav", "total_conflict_duration_sec", "pet", "Gap_time", "mttc_ttc"}
+    force_zero_underflow = {"ttc", "ttc_deltav", "critical_conflict_duration_sec", "pet", "Gap_time", "MTTC"}
+    force_zero_overflow = {"ttc", "ttc_deltav", "critical_conflict_duration_sec", "pet", "Gap_time", "MTTC"}
 
     def safe_underflow(df_in, col):
         if col not in df_in.columns:
@@ -301,9 +301,9 @@ if uploaded_streamlit_file:
 
     underflow_bins = {
         "ttc": 0,
-        "mttc_ttc": 0,
+        "MTTC": 0,
         "ttc_deltav": 0,
-        "total_conflict_duration_sec": 0,
+        "critical_conflict_duration_sec": 0,
         "pet": 0,
         "Gap_time": 0,
         "Gap_distance": safe_underflow(df, "Gap_distance"),
@@ -313,9 +313,9 @@ if uploaded_streamlit_file:
 
     overflow_bins = {
         "ttc": 3,
-        "mttc_ttc": 3,
+        "MTTC": 3,
         "ttc_deltav": 12,
-        "total_conflict_duration_sec": 3,
+        "critical_conflict_duration_sec": 3,
         "pet": 4,
         "Gap_time": 4,
         "Gap_distance": safe_overflow(df, "Gap_distance"),
@@ -695,4 +695,5 @@ else:
         "Per Volume rate = (Final conflict count / Volume exposure) × 100. "
         "Per Interaction rate = (Final conflict count / All interactions in Combined) × 100."
     )
+
 
