@@ -254,13 +254,14 @@ if uploaded_streamlit_file:
         "Gap_distance": "Gap distance (m)",
         "max_DRAC": "Max DRAC (m/s²)",
         "DeltaV": "Delta-V (km/h)",
-        "MTTC": "MTTC/TTC"
+        "MTTC": "MTTC/TTC",
+        "Time_Advantage": "Supplementary TTC"
     }
 
     conflict_hist_vars = {
         "Rear-End": ["ttc", "ttc_deltav", "critical_conflict_duration_sec", "max_DRAC", "MTTC"],
-        "VRU": ["pet", "Gap_time", "Gap_distance", "DeltaV"],
-        "Merging": ["pet", "Gap_time", "Gap_distance", "DeltaV"]
+        "VRU": ["pet", "Gap_time", "Gap_distance", "DeltaV", "Time_Advantage"],
+        "Merging": ["pet", "Gap_time", "Gap_distance", "DeltaV", "Time_Advantage"]
     }
 
     BIN_COUNT_CONTROL_VARS = {"Gap_distance", "DeltaV", "max_DRAC"}
@@ -273,7 +274,7 @@ if uploaded_streamlit_file:
         "critical_conflict_duration_sec": 0.5,
         "pet": 0.5,
         "Gap_time": 1,
-        "MTTC": 0.5
+        "MTTC": 0.5,
     }
 
     force_zero_underflow = {"ttc", "ttc_deltav", "critical_conflict_duration_sec", "pet", "Gap_time", "MTTC"}
@@ -695,5 +696,6 @@ else:
         "Per Volume rate = (Final conflict count / Volume exposure) × 100. "
         "Per Interaction rate = (Final conflict count / All interactions in Combined) × 100."
     )
+
 
 
