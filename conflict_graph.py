@@ -275,10 +275,11 @@ if uploaded_streamlit_file:
         "pet": 0.5,
         "Gap_time": 1,
         "MTTC": 0.5,
+        "Time_Advantage": 2
     }
 
-    force_zero_underflow = {"ttc", "ttc_deltav", "critical_conflict_duration_sec", "pet", "Gap_time", "MTTC"}
-    force_zero_overflow = {"ttc", "ttc_deltav", "critical_conflict_duration_sec", "pet", "Gap_time", "MTTC"}
+    force_zero_underflow = {"ttc", "ttc_deltav", "critical_conflict_duration_sec", "pet", "Gap_time", "MTTC", "Time_Advantage"}
+    force_zero_overflow = {"ttc", "ttc_deltav", "critical_conflict_duration_sec", "pet", "Gap_time", "MTTC", "Time_Advantage"}
 
     def safe_underflow(df_in, col):
         if col not in df_in.columns:
@@ -696,6 +697,7 @@ else:
         "Per Volume rate = (Final conflict count / Volume exposure) × 100. "
         "Per Interaction rate = (Final conflict count / All interactions in Combined) × 100."
     )
+
 
 
 
