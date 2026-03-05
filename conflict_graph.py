@@ -632,7 +632,7 @@ else:
     def safe_rate(n, exposure):
         return np.nan if (
             exposure is None or pd.isna(exposure) or exposure <= 0
-        ) else (n / exposure) * 100
+        ) else (n / exposure)
     
     # -----------------------------
     # Rate per Volume (Final / Custom Exposure)
@@ -663,27 +663,27 @@ else:
     ])
 
     show_vol = rates_vol_df.copy()
-    show_vol["Exposure"] = show_vol["Exposure"].map(lambda x: f"{x}" if pd.notna(x) else "NA")
-    show_vol["Conflict Rate (%)"] = show_vol["Conflict Rate (%)"].map(
+    show_vol["Exposure"] = show_vol["Exposure"].map(lambda x: f"{x:,.0f}" if pd.notna(x) else "NA")
+    show_vol["Conflict Rate"] = show_vol["Conflict Rate"].map(
         lambda x: "NA (invalid exposure)" if pd.isna(x) else f"{x:.8f}%"
     )
 
     st.markdown("### 📌 Conflict Rate per Volume (Final / Volume)")
     st.dataframe(show_vol, use_container_width=True)
 
-    plot_df = rates_vol_df.dropna(subset=["Conflict Rate (%)"]).copy()
+    plot_df = rates_vol_df.dropna(subset=["Conflict Rate"]).copy()
     if plot_df.empty:
         st.warning("Cannot plot volume-based rates because one or more exposure volumes are zero.")
     else:
         fig_rate = px.bar(
             plot_df,
             x="Conflict Type",
-            y="Conflict Rate (%)",
-            text=plot_df["Conflict Rate (%)"].map(lambda x: f"{x:.4f}%"),
+            y="Conflict Rate",
+            text=plot_df["Conflict Rate"].map(lambda x: f"{x:.6f}%"),
             height=450
         )
         fig_rate.update_traces(textposition="outside")
-        fig_rate.update_layout(yaxis_title="Conflict Rate (%)", xaxis_title="")
+        fig_rate.update_layout(yaxis_title="Conflict Rate", xaxis_title="")
         st.plotly_chart(fig_rate, use_container_width=True)
 
     # -----------------------------
@@ -694,26 +694,26 @@ else:
     rate_merg_int = safe_rate(n_merging_final, n_merging_all)
 
     rates_int_df = pd.DataFrame([
-        {"Conflict Type": "Rear-End", "Final Conflicts": n_rear_final, "All Interactions (Combined)": n_rear_all, "Conflict Rate (%)": rate_rear_int},
-        {"Conflict Type": "VRU", "Final Conflicts": n_vru_final, "All Interactions (Combined)": n_vru_all, "Conflict Rate (%)": rate_vru_int},
-        {"Conflict Type": "Merging", "Final Conflicts": n_merging_final, "All Interactions (Combined)": n_merging_all, "Conflict Rate (%)": rate_merg_int},
+        {"Conflict Type": "Rear-End", "Final Conflicts": n_rear_final, "All Interactions (Combined)": n_rear_all, "Conflict Rate": rate_rear_int},
+        {"Conflict Type": "VRU", "Final Conflicts": n_vru_final, "All Interactions (Combined)": n_vru_all, "Conflict Rate": rate_vru_int},
+        {"Conflict Type": "Merging", "Final Conflicts": n_merging_final, "All Interactions (Combined)": n_merging_all, "Conflict Rate": rate_merg_int},
     ])
 
     show_int = rates_int_df.copy()
-    show_int["Conflict Rate (%)"] = show_int["Conflict Rate (%)"].map(lambda x: "NA (0 interactions)" if pd.isna(x) else f"{x:.4f}%")
+    show_int["Conflict Rate"] = show_int["Conflict Rate"].map(lambda x: "NA (0 interactions)" if pd.isna(x) else f"{x:.4f}")
 
     st.markdown("### 📌 Conflict Rate per Interaction (Final / Combined)")
     st.dataframe(show_int, use_container_width=True)
 
-    plot_int = rates_int_df.dropna(subset=["Conflict Rate (%)"]).copy()
+    plot_int = rates_int_df.dropna(subset=["Conflict Rate"]).copy()
     if plot_int.empty:
         st.warning("Cannot plot interaction-based rates because one or more interaction counts are zero.")
     else:
         fig_int = px.bar(
             plot_int,
             x="Conflict Type",
-            y="Conflict Rate (%)",
-            text=plot_int["Conflict Rate (%)"].map(lambda x: f"{x:.4f}%"),
+            y="Conflict Rate",
+            text=plot_int["Conflict Rate"].map(lambda x: f"{x:.4f}"),
             height=420
         )
         fig_int.update_traces(textposition="outside")
@@ -722,9 +722,10 @@ else:
 
     st.caption(
         "Definitions: "
-        "Per Volume rate = (Final conflict count / Volume exposure) × 100. "
-        "Per Interaction rate = (Final conflict count / All interactions in Combined) × 100."
+        "Per Volume rate = (Final conflict count / Volume exposure). "
+        "Per Interaction rate = (Final conflict count / All interactions in Combined)."
     )
+
 
 
 
