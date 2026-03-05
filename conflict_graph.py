@@ -646,24 +646,24 @@ else:
             "Conflict Type": "VRU",
             "Final Conflicts": n_vru_final,
             "Exposure": exp_vru,
-            "Conflict Rate (%)": rate_vru_vol
+            "Conflict Rate": rate_vru_vol
         },
         {
             "Conflict Type": "Rear-End",
             "Final Conflicts": n_rear_final,
             "Exposure": exp_rear,
-            "Conflict Rate (%)": rate_rear_vol
+            "Conflict Rate": rate_rear_vol
         },
         {
             "Conflict Type": "Merging",
             "Final Conflicts": n_merging_final,
             "Exposure": exp_merg,
-            "Conflict Rate (%)": rate_merg_vol
+            "Conflict Rate": rate_merg_vol
         },
     ])
 
     show_vol = rates_vol_df.copy()
-    show_vol["Exposure"] = show_vol["Exposure"].map(lambda x: f"{x:,.4f}" if pd.notna(x) else "NA")
+    show_vol["Exposure"] = show_vol["Exposure"].map(lambda x: f"{x:,.f}" if pd.notna(x) else "NA")
     show_vol["Conflict Rate (%)"] = show_vol["Conflict Rate (%)"].map(
         lambda x: "NA (invalid exposure)" if pd.isna(x) else f"{x:.8f}%"
     )
@@ -725,6 +725,7 @@ else:
         "Per Volume rate = (Final conflict count / Volume exposure) × 100. "
         "Per Interaction rate = (Final conflict count / All interactions in Combined) × 100."
     )
+
 
 
 
