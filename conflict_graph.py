@@ -627,7 +627,7 @@ else:
     exp_merg = vol_slip * (vol_merg_total - vol_slip)
     
     # VRU: (VRU volume * Slip-lane volume)^2
-    exp_vru = (vol_vru * vol_slip) ** 2
+    exp_vru = (vol_vru * vol_slip)
     
     def safe_rate(n, exposure):
         return np.nan if (
@@ -725,6 +725,7 @@ else:
         "Per Volume rate = (Final conflict count / Volume exposure) × 100. "
         "Per Interaction rate = (Final conflict count / All interactions in Combined) × 100."
     )
+
 
 
 
