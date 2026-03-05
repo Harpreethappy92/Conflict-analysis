@@ -663,7 +663,7 @@ else:
     ])
 
     show_vol = rates_vol_df.copy()
-    show_vol["Exposure"] = show_vol["Exposure"].map(lambda x: f"{x:,.f}" if pd.notna(x) else "NA")
+    show_vol["Exposure"] = show_vol["Exposure"].map(lambda x: f"{x:}" if pd.notna(x) else "NA")
     show_vol["Conflict Rate (%)"] = show_vol["Conflict Rate (%)"].map(
         lambda x: "NA (invalid exposure)" if pd.isna(x) else f"{x:.8f}%"
     )
@@ -725,6 +725,7 @@ else:
         "Per Volume rate = (Final conflict count / Volume exposure) × 100. "
         "Per Interaction rate = (Final conflict count / All interactions in Combined) × 100."
     )
+
 
 
 
