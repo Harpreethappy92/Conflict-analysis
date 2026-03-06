@@ -581,7 +581,7 @@ if uploaded_streamlit_file:
         fig_pie_vol = px.pie(pie_df, names="Category", values="Total Volume", hole=0.25)
         fig_pie_vol.update_traces(
             texttemplate="%{label}<br>%{value:.0f} (%{percent})",
-            textposition="inside"
+            textposition="inside",
             textfont_size=18
         )
         st.plotly_chart(fig_pie_vol, use_container_width=True)
@@ -726,6 +726,7 @@ else:
         "Per Volume rate = (Final conflict count / Volume exposure). "
         "Per Interaction rate = (Final conflict count / All interactions in Combined)."
     )
+
 
 
 
